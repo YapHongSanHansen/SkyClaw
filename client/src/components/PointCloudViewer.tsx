@@ -487,16 +487,11 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         });
       }
 
-      // ── Hide drone in POV mode so it doesn't block the CCTV view ─────
-      if (droneGroup) {
-        droneGroup.visible = !isPov;
-      }
-
       // ── Camera ──────────────────────────────────────────────────────────
       if (isPov && droneGroup) {
-        // CCTV-style POV: elevated corner position looking down at the room
-        // Camera sits at a high corner like a security camera
-        const cctvPos = new THREE.Vector3(ROOM_W / 2 - 0.3, ROOM_H - 0.2, -ROOM_D / 2 + 0.3);
+        // CCTV-style POV: elevated corner, pulled far back so drone is small but visible
+        // Position well outside the room for a wide overview
+        const cctvPos = new THREE.Vector3(ROOM_W / 2 + 3, ROOM_H + 3, -ROOM_D / 2 - 3);
         camera.position.copy(cctvPos);
 
         // User can orbit the look target with drag
