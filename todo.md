@@ -19,3 +19,7 @@
 - [x] Build 360° panorama viewer component (Three.js equirectangular)
 - [x] Wire "scan the cafe" command to trigger scan simulation + panorama viewer + 3D generation
 - [x] Add social media export/share button for generated models
+- [x] Design cafe viewpoint navigation graph (7 nodes + connections)
+- [x] Build VirtualTour component: Three.js 360° sphere + clickable hotspot arrows to walk between viewpoints
+- [x] Add mini-map floor plan overlay with current position indicator
+- [x] Wire TOUR view mode into Dashboard (replaces panorama, triggered by cafe scan)
