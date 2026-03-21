@@ -489,23 +489,28 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
 
       // ── Camera ──────────────────────────────────────────────────────────
       if (isPov && droneGroup) {
-        // CCTV-style POV: elevated corner, pulled far back so drone is small but visible
-        // Position well outside the room for a wide overview
-        const cctvPos = new THREE.Vector3(ROOM_W / 2 + 3, ROOM_H + 3, -ROOM_D / 2 - 3);
-        camera.position.copy(cctvPos);
+        // FPV-style POV: camera mounted just behind/below the drone
+        // so the drone arms/wings are visible at screen edges but center is clear
+        // Get drone's forward direction
+        const droneForward = new THREE.Vector3(0, 0, -1).applyQuaternion(droneGroup.quaternion);
+        const droneUp = new THREE.Vector3(0, 1, 0).applyQuaternion(droneGroup.quaternion);
 
-        // User can orbit the look target with drag
+        // Position camera slightly behind and below the drone body
+        const camOffset = droneForward.clone().multiplyScalar(-0.15) // slightly behind
+          .add(droneUp.clone().multiplyScalar(-0.12)); // slightly below
+        const fpvPos = droneGroup.position.clone().add(camOffset);
+        camera.position.copy(fpvPos);
+
+        // User can orbit the look direction with drag
         const yaw = povOrbitRef.current.yaw;
         const pitch = povOrbitRef.current.pitch;
 
-        // Base look direction: towards room center and slightly down
-        const baseLookTarget = new THREE.Vector3(0, 0.5, 0);
-        // Apply user's yaw/pitch offset to the look target
-        const offset = new THREE.Vector3(
-          Math.sin(yaw) * 4,
-          Math.sin(pitch) * 3,
-          Math.cos(yaw) * 4
-        );
+        // Base look direction: where the drone is facing
+        const baseLookTarget = droneGroup.position.clone().add(droneForward.clone().multiplyScalar(5));
+        // Apply user's yaw/pitch offset
+        const right = new THREE.Vector3().crossVectors(droneForward, droneUp).normalize();
+        const offset = right.clone().multiplyScalar(Math.sin(yaw) * 4)
+          .add(droneUp.clone().multiplyScalar(Math.sin(pitch) * 3));
         const lookTarget = baseLookTarget.clone().add(offset);
 
         camera.lookAt(lookTarget);
