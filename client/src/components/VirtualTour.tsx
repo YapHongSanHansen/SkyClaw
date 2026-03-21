@@ -1,126 +1,55 @@
 /**
- * VirtualTour — Fully immersive Google Maps Street View-style 3D tour.
+ * VirtualTour — Fully free-roam immersive 360° tour.
  *
- * Navigation:
- *  - DRAG (single finger / mouse) → look around in 360°
- *  - DOUBLE-CLICK anywhere → detects the bearing you clicked, finds the nearest
- *    connected viewpoint in that direction, and navigates there automatically.
- *    This is the exact behaviour of Google Maps Street View.
- *  - CLICK on a hotspot arrow → also navigates (single click on the arrow itself)
- *  - Mini-map nodes → teleport to any viewpoint
+ * How it works:
+ *  - 7 real cafe panoramas are loaded as equirectangular textures on the inside of a sphere.
+ *  - The user can look around freely by dragging.
+ *  - Clicking (or double-clicking) ANYWHERE in the scene picks the exact bearing + pitch
+ *    the user clicked, finds the panorama whose position is closest in that direction,
+ *    and smoothly crossfades to it — giving the feel of walking freely through the space.
+ *  - No fixed hotspot arrows. No snapping to pre-set stations. Click = walk there.
+ *  - A subtle "walk cursor" (animated circle) shows where you'll move on hover.
+ *  - Smooth camera pan animation eases the view toward the clicked direction.
+ *  - Dual-sphere crossfade: the old panorama fades out while the new one fades in.
  *
- * Hotspot design:
- *  - Flat ellipses on the "floor" of the sphere (low pitch, -25°) like Google Maps
- *  - White chevron arrow pointing toward the destination
- *  - Pulsing cyan glow ring
- *
- * Viewpoint graph (7 real cafe photos):
- *   1 (Upper landing) ↔ 2 (Staircase mid) ↔ 3 (Seating area)
- *   3 ↔ 4 (Window side) ↔ 5 (Main hall) ↔ 6 (Bar counter) ↔ 7 (Spiral staircase)
+ * Panorama graph (7 real cafe photos, spatially positioned):
+ *   Positions are stored as (x, z) on a 2D floor plan so the "nearest in direction"
+ *   logic can pick the most spatially appropriate panorama for any click bearing.
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
-import { X, Maximize2, Minimize2, Map, RotateCcw, Info, Navigation } from "lucide-react";
+import { X, Maximize2, Minimize2, Map, RotateCcw } from "lucide-react";
 
-// ─── Viewpoint data ────────────────────────────────────────────────────────────
+// ─── Panorama data ─────────────────────────────────────────────────────────────
 
 export interface Viewpoint {
   id: number;
   label: string;
   floor: "ground" | "upper";
   url: string;
+  /** 2D floor-plan position (arbitrary units, used for spatial direction logic) */
+  pos: { x: number; z: number };
+  /** Mini-map render position as % of SVG */
   mapX: number;
   mapY: number;
-  /** bearing = compass degrees (0 = forward/north in the pano), pitch = degrees up/down */
-  connections: { to: number; bearing: number; pitch: number; label: string }[];
 }
 
 export const VIEWPOINTS: Viewpoint[] = [
-  {
-    id: 1,
-    label: "Upper Floor — Staircase Landing",
-    floor: "upper",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-1_1c4e8fa8.jpeg",
-    mapX: 75, mapY: 20,
-    connections: [
-      { to: 2, bearing: 200, pitch: -25, label: "Go down stairs" },
-    ],
-  },
-  {
-    id: 2,
-    label: "Staircase — Mid-Landing",
-    floor: "upper",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-2_ac2cb743.jpeg",
-    mapX: 65, mapY: 40,
-    connections: [
-      { to: 1, bearing: 20, pitch: -25, label: "Go up" },
-      { to: 3, bearing: 200, pitch: -25, label: "Ground floor" },
-    ],
-  },
-  {
-    id: 3,
-    label: "Ground Floor — Seating Area",
-    floor: "ground",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-3_e9de660f.jpeg",
-    mapX: 55, mapY: 60,
-    connections: [
-      { to: 2, bearing: 30, pitch: -25, label: "Stairs" },
-      { to: 4, bearing: 270, pitch: -25, label: "Window side" },
-      { to: 5, bearing: 180, pitch: -25, label: "Main hall" },
-    ],
-  },
-  {
-    id: 4,
-    label: "Ground Floor — Window Side",
-    floor: "ground",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-4_bb2a7c9e.jpeg",
-    mapX: 20, mapY: 55,
-    connections: [
-      { to: 3, bearing: 90, pitch: -25, label: "Seating area" },
-      { to: 5, bearing: 180, pitch: -25, label: "Main hall" },
-    ],
-  },
-  {
-    id: 5,
-    label: "Main Hall — Full View",
-    floor: "ground",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-5_0e240249.jpeg",
-    mapX: 40, mapY: 75,
-    connections: [
-      { to: 3, bearing: 0, pitch: -25, label: "Seating area" },
-      { to: 4, bearing: 90, pitch: -25, label: "Window side" },
-      { to: 6, bearing: 200, pitch: -25, label: "Bar counter" },
-    ],
-  },
-  {
-    id: 6,
-    label: "Bar Counter — Entrance Side",
-    floor: "ground",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-6_0178eefa.jpeg",
-    mapX: 30, mapY: 88,
-    connections: [
-      { to: 5, bearing: 20, pitch: -25, label: "Main hall" },
-      { to: 7, bearing: 180, pitch: -25, label: "Spiral staircase" },
-    ],
-  },
-  {
-    id: 7,
-    label: "Spiral Staircase — Street View",
-    floor: "ground",
-    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-7_d5f67861.jpeg",
-    mapX: 50, mapY: 92,
-    connections: [
-      { to: 6, bearing: 0, pitch: -25, label: "Bar counter" },
-    ],
-  },
+  { id: 1, label: "Upper Landing",        floor: "upper",  url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-1_1c4e8fa8.jpeg", pos: { x:  8, z: -8 }, mapX: 75, mapY: 20 },
+  { id: 2, label: "Staircase Mid",        floor: "upper",  url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-2_ac2cb743.jpeg", pos: { x:  5, z: -4 }, mapX: 65, mapY: 40 },
+  { id: 3, label: "Seating Area",         floor: "ground", url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-3_e9de660f.jpeg", pos: { x:  3, z:  0 }, mapX: 55, mapY: 60 },
+  { id: 4, label: "Window Side",          floor: "ground", url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-4_bb2a7c9e.jpeg", pos: { x: -4, z:  1 }, mapX: 20, mapY: 55 },
+  { id: 5, label: "Main Hall",            floor: "ground", url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-5_0e240249.jpeg", pos: { x:  0, z:  4 }, mapX: 40, mapY: 75 },
+  { id: 6, label: "Bar Counter",          floor: "ground", url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-6_0178eefa.jpeg", pos: { x: -2, z:  7 }, mapX: 30, mapY: 88 },
+  { id: 7, label: "Spiral Staircase",     floor: "ground", url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-7_d5f67861.jpeg", pos: { x:  2, z:  9 }, mapX: 50, mapY: 92 },
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Convert bearing (compass degrees) + pitch to a 3D point on the sphere. */
-function bpToVec(bearing: number, pitch: number, r = 390): THREE.Vector3 {
-  const phi = THREE.MathUtils.degToRad(90 - pitch);
-  const theta = THREE.MathUtils.degToRad(bearing);
+/** Convert lon/lat (degrees) to a 3D look-at point on the sphere. */
+function lonLatToTarget(lon: number, lat: number, r = 500): THREE.Vector3 {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon);
   return new THREE.Vector3(
     r * Math.sin(phi) * Math.cos(theta),
     r * Math.cos(phi),
@@ -128,34 +57,63 @@ function bpToVec(bearing: number, pitch: number, r = 390): THREE.Vector3 {
   );
 }
 
-/** Get the bearing (0-360) from the camera look direction. */
-function cameraBearing(camera: THREE.PerspectiveCamera): number {
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  const bearing = THREE.MathUtils.radToDeg(Math.atan2(dir.x, dir.z));
-  return (bearing + 360) % 360;
-}
-
-/** Angular difference between two bearings (-180 to 180). */
-function bearingDiff(a: number, b: number): number {
-  let d = ((b - a + 540) % 360) - 180;
-  return d;
-}
-
-/** Given a click position (NDC) and the camera, compute the bearing the user clicked. */
-function clickBearing(
+/** Get the world-space direction the user clicked (as a unit vector). */
+function getClickDirection(
   clientX: number, clientY: number,
   container: HTMLElement,
   camera: THREE.PerspectiveCamera
-): number {
+): THREE.Vector3 {
   const rect = container.getBoundingClientRect();
   const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
   const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-  const ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
-  const dir = ray.ray.direction;
-  const bearing = THREE.MathUtils.radToDeg(Math.atan2(dir.x, dir.z));
-  return (bearing + 360) % 360;
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+  return raycaster.ray.direction.clone().normalize();
+}
+
+/**
+ * Given the direction the user clicked (world-space unit vector from camera origin),
+ * find the panorama whose floor-plan position is most aligned with that direction.
+ *
+ * Strategy: project each viewpoint's 2D floor-plan offset from the current viewpoint
+ * into a bearing, then find the one whose bearing is closest to the click bearing.
+ * Prefer closer viewpoints when bearings are similar.
+ */
+function findBestViewpoint(
+  clickDir: THREE.Vector3,
+  currentId: number
+): Viewpoint {
+  const current = VIEWPOINTS.find((v) => v.id === currentId)!;
+
+  // Click bearing in the XZ plane (ignoring vertical)
+  const clickBearing = Math.atan2(clickDir.x, clickDir.z); // radians
+
+  let best: Viewpoint = current;
+  let bestScore = Infinity;
+
+  for (const vp of VIEWPOINTS) {
+    if (vp.id === currentId) continue;
+
+    // Direction from current to candidate on floor plan
+    const dx = vp.pos.x - current.pos.x;
+    const dz = vp.pos.z - current.pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 0.01) continue;
+
+    const vpBearing = Math.atan2(dx, dz); // radians
+
+    // Angular difference (0 = perfect alignment)
+    let angDiff = Math.abs(clickBearing - vpBearing);
+    if (angDiff > Math.PI) angDiff = 2 * Math.PI - angDiff;
+
+    // Score: penalise angular mismatch heavily, lightly penalise distance
+    const score = angDiff * 3 + dist * 0.1;
+    if (score < bestScore) { bestScore = score; best = vp; }
+  }
+
+  // Only switch if the click is reasonably aligned (within ~100°)
+  if (bestScore > Math.PI * 0.6) return current;
+  return best;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -170,28 +128,35 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const sphereMeshRef = useRef<THREE.Mesh | null>(null);
-  const hotspotGroupRef = useRef<THREE.Group | null>(null);
+  const sphereARef = useRef<THREE.Mesh | null>(null); // active sphere
+  const sphereBRef = useRef<THREE.Mesh | null>(null); // fade-in sphere
   const animFrameRef = useRef<number>(0);
-  const raycasterRef = useRef(new THREE.Raycaster());
-  const mouseRef = useRef(new THREE.Vector2());
 
-  // Drag state
+  // Camera look direction (lon = horizontal rotation, lat = vertical tilt)
   const lon = useRef(0);
   const lat = useRef(0);
+  // Target lon/lat for smooth pan animation after click
+  const targetLon = useRef(0);
+  const targetLat = useRef(0);
+  const isPanning = useRef(false);
+
+  // Drag state
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const dragDistance = useRef(0);
   const lastClickTime = useRef(0);
 
+  // Crossfade state
+  const fadeProgress = useRef(0); // 0 = fully A, 1 = fully B
+  const isFadingRef = useRef(false);
+
   const [currentId, setCurrentId] = useState(initialId);
+  const currentIdRef = useRef(initialId);
   const [isLoading, setIsLoading] = useState(true);
   const [isFading, setIsFading] = useState(false);
   const [showMap, setShowMap] = useState(true);
-  const [showInfo, setShowInfo] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [hoveredHotspot, setHoveredHotspot] = useState<number | null>(null);
-  const [navHint, setNavHint] = useState<string | null>(null);
+  const [walkCursor, setWalkCursor] = useState<{ x: number; y: number } | null>(null);
 
   const currentVP = VIEWPOINTS.find((v) => v.id === currentId)!;
 
@@ -213,30 +178,64 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     camera.position.set(0, 0, 0.01);
     cameraRef.current = camera;
 
-    // Panorama sphere (inverted so texture faces inward)
-    const geo = new THREE.SphereGeometry(500, 64, 48);
-    geo.scale(-1, 1, 1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    const mesh = new THREE.Mesh(geo, mat);
-    scene.add(mesh);
-    sphereMeshRef.current = mesh;
+    // Two spheres for crossfade: A (current) and B (incoming)
+    const makeSphereMesh = (opacity: number) => {
+      const geo = new THREE.SphereGeometry(500, 64, 48);
+      geo.scale(-1, 1, 1);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x111111, transparent: true, opacity,
+      });
+      return new THREE.Mesh(geo, mat);
+    };
 
-    // Hotspot group
-    const hotspotGroup = new THREE.Group();
-    scene.add(hotspotGroup);
-    hotspotGroupRef.current = hotspotGroup;
+    const sphereA = makeSphereMesh(1);
+    const sphereB = makeSphereMesh(0);
+    scene.add(sphereA, sphereB);
+    sphereARef.current = sphereA;
+    sphereBRef.current = sphereB;
 
     // Render loop
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
+
+      // Smooth pan toward target
+      if (isPanning.current) {
+        const dLon = targetLon.current - lon.current;
+        const dLat = targetLat.current - lat.current;
+        lon.current += dLon * 0.08;
+        lat.current += dLat * 0.08;
+        if (Math.abs(dLon) < 0.05 && Math.abs(dLat) < 0.05) {
+          lon.current = targetLon.current;
+          lat.current = targetLat.current;
+          isPanning.current = false;
+        }
+      }
+
+      // Crossfade animation
+      if (isFadingRef.current) {
+        fadeProgress.current = Math.min(fadeProgress.current + 0.04, 1);
+        const matA = sphereARef.current!.material as THREE.MeshBasicMaterial;
+        const matB = sphereBRef.current!.material as THREE.MeshBasicMaterial;
+        matA.opacity = 1 - fadeProgress.current;
+        matB.opacity = fadeProgress.current;
+        if (fadeProgress.current >= 1) {
+          // Swap: B becomes the new A
+          const texB = matB.map;
+          matA.map = texB;
+          matA.opacity = 1;
+          matB.map = null;
+          matB.opacity = 0;
+          matA.needsUpdate = true;
+          matB.needsUpdate = true;
+          fadeProgress.current = 0;
+          isFadingRef.current = false;
+          setIsFading(false);
+        }
+      }
+
       lat.current = Math.max(-85, Math.min(85, lat.current));
-      const phi = THREE.MathUtils.degToRad(90 - lat.current);
-      const theta = THREE.MathUtils.degToRad(lon.current);
-      camera.lookAt(
-        500 * Math.sin(phi) * Math.cos(theta),
-        500 * Math.cos(phi),
-        500 * Math.sin(phi) * Math.sin(theta)
-      );
+      const target = lonLatToTarget(lon.current, lat.current);
+      camera.lookAt(target);
       renderer.render(scene, camera);
     };
     animate();
@@ -257,224 +256,111 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load panorama texture ────────────────────────────────────────────────────
+  // ── Load initial panorama ────────────────────────────────────────────────────
   useEffect(() => {
-    if (!sphereMeshRef.current) return;
+    const vp = VIEWPOINTS.find((v) => v.id === initialId)!;
     setIsLoading(true);
-
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      currentVP.url,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const mat = sphereMeshRef.current!.material as THREE.MeshBasicMaterial;
-        mat.map = texture;
-        mat.needsUpdate = true;
-        setIsLoading(false);
-        buildHotspots(currentVP);
-      },
-      undefined,
-      () => setIsLoading(false)
-    );
-  }, [currentId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Build Google Maps-style ground hotspots ──────────────────────────────────
-  const buildHotspots = useCallback((vp: Viewpoint) => {
-    const group = hotspotGroupRef.current;
-    if (!group) return;
-
-    // Clear
-    while (group.children.length) {
-      const child = group.children[0] as THREE.Mesh;
-      child.geometry?.dispose();
-      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-      else (child.material as THREE.Material)?.dispose();
-      group.remove(child);
-    }
-
-    vp.connections.forEach((conn) => {
-      // Place hotspot at floor level (pitch = -25 so it appears on the ground)
-      const pos = bpToVec(conn.bearing, conn.pitch, 390);
-
-      // ── Outer glow ring ──
-      const glowGeo = new THREE.TorusGeometry(18, 1.5, 8, 48);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: 0x00e5ff, transparent: true, opacity: 0.6, depthTest: false,
-      });
-      const glow = new THREE.Mesh(glowGeo, glowMat);
-      glow.position.copy(pos);
-      glow.lookAt(0, 0, 0);
-      glow.userData = { type: "hotspot", toId: conn.to, label: conn.label };
-
-      // ── Inner filled ellipse (flat on ground) ──
-      const ellipseGeo = new THREE.CircleGeometry(14, 32);
-      const ellipseMat = new THREE.MeshBasicMaterial({
-        color: 0x00e5ff, transparent: true, opacity: 0.15,
-        depthTest: false, side: THREE.DoubleSide,
-      });
-      const ellipse = new THREE.Mesh(ellipseGeo, ellipseMat);
-      ellipse.position.copy(pos);
-      ellipse.lookAt(0, 0, 0);
-      ellipse.userData = { type: "hotspot", toId: conn.to, label: conn.label };
-
-      // ── Chevron arrow (Google Maps style) ──
-      // Two rectangles forming a ">" pointing toward the centre of the sphere
-      const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
-
-      const leftWing = new THREE.Mesh(new THREE.BoxGeometry(9, 2.5, 1), arrowMat.clone());
-      leftWing.position.set(-3, 3, 0);
-      leftWing.rotation.z = -Math.PI / 4;
-
-      const rightWing = new THREE.Mesh(new THREE.BoxGeometry(9, 2.5, 1), arrowMat.clone());
-      rightWing.position.set(-3, -3, 0);
-      rightWing.rotation.z = Math.PI / 4;
-
-      const stem = new THREE.Mesh(new THREE.BoxGeometry(10, 2.5, 1), arrowMat.clone());
-      stem.position.set(2, 0, 0);
-
-      const chevron = new THREE.Group();
-      chevron.add(leftWing, rightWing, stem);
-      chevron.position.copy(pos);
-      chevron.lookAt(0, 0, 0);
-      chevron.userData = { type: "hotspot", toId: conn.to, label: conn.label };
-
-      group.add(glow, ellipse, chevron);
+    new THREE.TextureLoader().load(vp.url, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const mat = sphereARef.current!.material as THREE.MeshBasicMaterial;
+      mat.map = tex;
+      mat.needsUpdate = true;
+      setIsLoading(false);
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Hotspot pulse animation ──────────────────────────────────────────────────
-  useEffect(() => {
-    let frame: number;
-    const pulse = () => {
-      frame = requestAnimationFrame(pulse);
-      const group = hotspotGroupRef.current;
-      if (!group) return;
-      const t = Date.now() * 0.0025;
-      group.children.forEach((child) => {
-        if (child instanceof THREE.Mesh && child.userData?.type === "hotspot") {
-          const mat = child.material as THREE.MeshBasicMaterial;
-          const isHovered = child.userData.toId === hoveredHotspot;
-          if (child.geometry instanceof THREE.TorusGeometry) {
-            mat.opacity = isHovered ? 1 : 0.4 + 0.35 * Math.sin(t);
-            mat.color.setHex(isHovered ? 0xffffff : 0x00e5ff);
-          }
-          if (child.geometry instanceof THREE.CircleGeometry) {
-            mat.opacity = isHovered ? 0.4 : 0.1 + 0.1 * Math.sin(t);
-          }
-        }
-      });
-    };
-    pulse();
-    return () => cancelAnimationFrame(frame);
-  }, [hoveredHotspot]);
+  // ── Navigate to a new viewpoint with crossfade ───────────────────────────────
+  const navigateTo = useCallback((id: number, clickDir?: THREE.Vector3) => {
+    if (id === currentIdRef.current || isFadingRef.current) return;
 
-  // ── Raycasting ───────────────────────────────────────────────────────────────
-  const getHotspotAt = useCallback((clientX: number, clientY: number): { toId: number; label: string } | null => {
-    const container = mountRef.current;
-    const camera = cameraRef.current;
-    const group = hotspotGroupRef.current;
-    if (!container || !camera || !group) return null;
-
-    const rect = container.getBoundingClientRect();
-    mouseRef.current.set(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1
-    );
-    raycasterRef.current.setFromCamera(mouseRef.current, camera);
-    const hits = raycasterRef.current.intersectObjects(group.children, true);
-    for (const hit of hits) {
-      let obj: THREE.Object3D | null = hit.object;
-      while (obj) {
-        if (obj.userData?.type === "hotspot") return { toId: obj.userData.toId, label: obj.userData.label };
-        obj = obj.parent;
-      }
+    // Pan camera gently toward the click direction
+    if (clickDir) {
+      const newLon = THREE.MathUtils.radToDeg(Math.atan2(clickDir.x, clickDir.z));
+      const newLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, clickDir.y))));
+      targetLon.current = newLon;
+      targetLat.current = Math.max(-30, Math.min(30, newLat)); // keep mostly horizontal
+      isPanning.current = true;
     }
-    return null;
-  }, []);
 
-  // ── Navigate with fade ───────────────────────────────────────────────────────
-  const navigateTo = useCallback((id: number) => {
-    if (id === currentId || isFading) return;
+    isFadingRef.current = true;
+    fadeProgress.current = 0;
     setIsFading(true);
-    setTimeout(() => {
-      setCurrentId(id);
-      lon.current = 0;
-      lat.current = 0;
-      setIsFading(false);
-    }, 300);
-  }, [currentId, isFading]);
+    currentIdRef.current = id;
+    setCurrentId(id);
 
-  // ── Double-click-to-navigate (core Google Maps behaviour) ────────────────────
-  const handleDoubleClick = useCallback((clientX: number, clientY: number) => {
+    // Load new texture into sphere B
+    new THREE.TextureLoader().load(
+      VIEWPOINTS.find((v) => v.id === id)!.url,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const matB = sphereBRef.current!.material as THREE.MeshBasicMaterial;
+        matB.map = tex;
+        matB.needsUpdate = true;
+      }
+    );
+  }, []);
+
+  // ── Handle click → free-roam navigation ─────────────────────────────────────
+  const handleNavigationClick = useCallback((clientX: number, clientY: number) => {
     const container = mountRef.current;
     const camera = cameraRef.current;
-    if (!container || !camera) return;
+    if (!container || !camera || isFadingRef.current) return;
 
-    // First check if they double-clicked directly on a hotspot
-    const hotspot = getHotspotAt(clientX, clientY);
-    if (hotspot) { navigateTo(hotspot.toId); return; }
+    const dir = getClickDirection(clientX, clientY, container, camera);
+    const best = findBestViewpoint(dir, currentIdRef.current);
 
-    // Compute the bearing the user clicked
-    const clickedBearing = clickBearing(clientX, clientY, container, camera);
-
-    // Find the connected viewpoint whose bearing is closest to where the user clicked
-    const vp = VIEWPOINTS.find((v) => v.id === currentId)!;
-    let bestConn: typeof vp.connections[0] | null = null;
-    let bestDiff = Infinity;
-
-    for (const conn of vp.connections) {
-      const diff = Math.abs(bearingDiff(conn.bearing, clickedBearing));
-      if (diff < bestDiff) { bestDiff = diff; bestConn = conn; }
+    if (best.id !== currentIdRef.current) {
+      navigateTo(best.id, dir);
+    } else {
+      // Already at the best viewpoint — just pan the camera toward the click
+      const newLon = THREE.MathUtils.radToDeg(Math.atan2(dir.x, dir.z));
+      const newLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, dir.y))));
+      targetLon.current = newLon;
+      targetLat.current = Math.max(-60, Math.min(60, newLat));
+      isPanning.current = true;
     }
-
-    // Only navigate if the click is within 70° of a connection (prevents accidental nav)
-    if (bestConn && bestDiff < 70) {
-      setNavHint(`Moving to: ${bestConn.label}`);
-      setTimeout(() => setNavHint(null), 1500);
-      navigateTo(bestConn.to);
-    } else if (vp.connections.length > 0) {
-      // Show hint that there's no exit in that direction
-      setNavHint("No exit in that direction — try the arrows");
-      setTimeout(() => setNavHint(null), 1800);
-    }
-  }, [currentId, getHotspotAt, navigateTo]);
+  }, [navigateTo]);
 
   // ── Mouse handlers ───────────────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent) => {
     isDragging.current = true;
     dragDistance.current = 0;
     lastMouse.current = { x: e.clientX, y: e.clientY };
+    isPanning.current = false; // cancel any ongoing pan
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
-    const hit = getHotspotAt(e.clientX, e.clientY);
-    setHoveredHotspot(hit ? hit.toId : null);
-    (mountRef.current as HTMLElement).style.cursor =
-      hit ? "pointer" : isDragging.current ? "grabbing" : "grab";
-
-    if (!isDragging.current) return;
-    const dx = e.clientX - lastMouse.current.x;
-    const dy = e.clientY - lastMouse.current.y;
-    dragDistance.current += Math.abs(dx) + Math.abs(dy);
-    lon.current -= dx * 0.18;
-    lat.current += dy * 0.18;
-    lastMouse.current = { x: e.clientX, y: e.clientY };
+    if (isDragging.current) {
+      const dx = e.clientX - lastMouse.current.x;
+      const dy = e.clientY - lastMouse.current.y;
+      dragDistance.current += Math.abs(dx) + Math.abs(dy);
+      lon.current -= dx * 0.18;
+      lat.current += dy * 0.18;
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+      setWalkCursor(null);
+    } else {
+      // Show walk cursor on hover (not dragging)
+      setWalkCursor({ x: e.clientX, y: e.clientY });
+    }
   };
 
   const onMouseUp = (e: React.MouseEvent) => {
     isDragging.current = false;
-    if (dragDistance.current < 5) {
+    if (dragDistance.current < 6) {
       const now = Date.now();
       const timeSinceLast = now - lastClickTime.current;
       lastClickTime.current = now;
 
-      if (timeSinceLast < 350) {
-        // Double-click detected
-        handleDoubleClick(e.clientX, e.clientY);
+      if (timeSinceLast < 400) {
+        // Double-click
+        handleNavigationClick(e.clientX, e.clientY);
       } else {
-        // Single click — only navigate if directly on a hotspot
-        const hit = getHotspotAt(e.clientX, e.clientY);
-        if (hit) navigateTo(hit.toId);
+        // Single click also navigates (like Google Maps)
+        setTimeout(() => {
+          if (Date.now() - lastClickTime.current >= 380) {
+            handleNavigationClick(e.clientX, e.clientY);
+          }
+        }, 390);
       }
     }
   };
@@ -486,6 +372,7 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     isDragging.current = true;
     dragDistance.current = 0;
     lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    isPanning.current = false;
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
@@ -505,65 +392,63 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
       const now = Date.now();
       const timeSinceLast = now - lastTapTime.current;
       lastTapTime.current = now;
-
-      if (timeSinceLast < 350) {
-        // Double-tap
-        handleDoubleClick(t.clientX, t.clientY);
+      if (timeSinceLast < 400) {
+        handleNavigationClick(t.clientX, t.clientY);
       } else {
-        const hit = getHotspotAt(t.clientX, t.clientY);
-        if (hit) navigateTo(hit.toId);
+        setTimeout(() => {
+          if (Date.now() - lastTapTime.current >= 380) {
+            handleNavigationClick(t.clientX, t.clientY);
+          }
+        }, 390);
       }
     }
   };
 
   // ── Mini-map ─────────────────────────────────────────────────────────────────
   const MiniMap = () => (
-    <div className="absolute bottom-14 right-3 z-30 w-44 bg-black/85 border border-cyan/20 rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
+    <div className="absolute bottom-10 right-3 z-30 w-40 bg-black/85 border border-cyan/20 rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
       <div className="flex items-center justify-between px-2 py-1 border-b border-cyan/10">
         <span className="font-mono text-[9px] text-cyan/70 tracking-wider">FLOOR PLAN</span>
         <span className="font-mono text-[9px] text-white/40">{currentVP.floor === "upper" ? "▲ UPPER" : "● GROUND"}</span>
       </div>
-      <svg viewBox="0 0 100 100" className="w-full h-36 p-1">
-        <rect x="5" y="5" width="90" height="90" rx="3" fill="none" stroke="rgba(0,229,255,0.12)" strokeWidth="1" />
-        <rect x="55" y="5" width="40" height="50" rx="2" fill="rgba(0,229,255,0.03)" stroke="rgba(0,229,255,0.08)" strokeWidth="0.5" />
-        <text x="75" y="17" textAnchor="middle" fill="rgba(0,229,255,0.25)" fontSize="4" fontFamily="monospace">UPPER</text>
-        <text x="30" y="95" textAnchor="middle" fill="rgba(0,229,255,0.25)" fontSize="4" fontFamily="monospace">GROUND</text>
+      <svg viewBox="0 0 100 100" className="w-full h-32 p-1">
+        <rect x="5" y="5" width="90" height="90" rx="3" fill="none" stroke="rgba(0,229,255,0.1)" strokeWidth="1" />
+        <rect x="55" y="5" width="40" height="50" rx="2" fill="rgba(0,229,255,0.03)" stroke="rgba(0,229,255,0.07)" strokeWidth="0.5" />
+        <text x="75" y="16" textAnchor="middle" fill="rgba(0,229,255,0.2)" fontSize="4" fontFamily="monospace">UPPER</text>
+        <text x="30" y="95" textAnchor="middle" fill="rgba(0,229,255,0.2)" fontSize="4" fontFamily="monospace">GROUND</text>
 
-        {VIEWPOINTS.map((vp) =>
-          vp.connections.map((conn) => {
-            const target = VIEWPOINTS.find((v) => v.id === conn.to);
-            if (!target) return null;
-            const isActive = vp.id === currentId || target.id === currentId;
-            return (
-              <line key={`${vp.id}-${conn.to}`}
-                x1={vp.mapX} y1={vp.mapY} x2={target.mapX} y2={target.mapY}
-                stroke={isActive ? "rgba(0,229,255,0.55)" : "rgba(0,229,255,0.12)"}
-                strokeWidth={isActive ? "1.2" : "0.5"}
-                strokeDasharray={isActive ? "none" : "2,2"}
-              />
-            );
-          })
-        )}
+        {/* Connections */}
+        {[[1,2],[2,3],[3,4],[3,5],[4,5],[5,6],[6,7]].map(([a, b]) => {
+          const va = VIEWPOINTS.find(v => v.id === a)!;
+          const vb = VIEWPOINTS.find(v => v.id === b)!;
+          const isActive = currentId === a || currentId === b;
+          return (
+            <line key={`${a}-${b}`}
+              x1={va.mapX} y1={va.mapY} x2={vb.mapX} y2={vb.mapY}
+              stroke={isActive ? "rgba(0,229,255,0.5)" : "rgba(0,229,255,0.12)"}
+              strokeWidth={isActive ? "1" : "0.5"}
+            />
+          );
+        })}
 
         {VIEWPOINTS.map((vp) => {
           const isCurrent = vp.id === currentId;
-          const isNeighbour = currentVP.connections.some((c) => c.to === vp.id);
           return (
             <g key={vp.id} style={{ cursor: "pointer" }} onClick={() => navigateTo(vp.id)}>
               <circle cx={vp.mapX} cy={vp.mapY}
-                r={isCurrent ? 5.5 : isNeighbour ? 3.5 : 2.5}
-                fill={isCurrent ? "#00e5ff" : isNeighbour ? "rgba(0,229,255,0.55)" : "rgba(0,229,255,0.2)"}
-                stroke={isCurrent ? "white" : "rgba(0,229,255,0.35)"}
-                strokeWidth={isCurrent ? "1.5" : "0.5"}
+                r={isCurrent ? 5 : 2.5}
+                fill={isCurrent ? "#00e5ff" : "rgba(0,229,255,0.25)"}
+                stroke={isCurrent ? "white" : "rgba(0,229,255,0.3)"}
+                strokeWidth={isCurrent ? "1.2" : "0.4"}
               />
               {isCurrent && (
-                <circle cx={vp.mapX} cy={vp.mapY} r="5" fill="none" stroke="rgba(0,229,255,0.4)" strokeWidth="0.8">
-                  <animate attributeName="r" from="5" to="11" dur="1.4s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.6" to="0" dur="1.4s" repeatCount="indefinite" />
+                <circle cx={vp.mapX} cy={vp.mapY} r="5" fill="none" stroke="rgba(0,229,255,0.4)" strokeWidth="0.7">
+                  <animate attributeName="r" from="5" to="12" dur="1.4s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" from="0.5" to="0" dur="1.4s" repeatCount="indefinite" />
                 </circle>
               )}
               <text x={vp.mapX} y={vp.mapY - 7} textAnchor="middle"
-                fill={isCurrent ? "white" : "rgba(255,255,255,0.35)"}
+                fill={isCurrent ? "white" : "rgba(255,255,255,0.3)"}
                 fontSize="3.5" fontFamily="monospace">{vp.id}</text>
             </g>
           );
@@ -572,18 +457,17 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     </div>
   );
 
-  // ── Viewpoint list ───────────────────────────────────────────────────────────
+  // ── Viewpoint list (left sidebar) ────────────────────────────────────────────
   const ViewpointList = () => (
-    <div className="absolute left-3 top-12 bottom-14 z-30 w-40 flex flex-col gap-1 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+    <div className="absolute left-3 top-12 bottom-10 z-30 w-36 flex flex-col gap-1 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
       {VIEWPOINTS.map((vp) => {
         const isCurrent = vp.id === currentId;
-        const isNeighbour = currentVP.connections.some((c) => c.to === vp.id);
         return (
           <button key={vp.id} onClick={() => navigateTo(vp.id)}
             className={`text-left px-2 py-1.5 rounded-md transition-all text-[10px] font-mono leading-tight ${
-              isCurrent ? "bg-cyan/20 border border-cyan/40 text-cyan"
-              : isNeighbour ? "bg-white/5 border border-white/10 text-white/70 hover:bg-cyan/10 hover:text-cyan"
-              : "bg-black/40 border border-white/5 text-white/25 hover:text-white/60"
+              isCurrent
+                ? "bg-cyan/20 border border-cyan/40 text-cyan"
+                : "bg-black/40 border border-white/5 text-white/35 hover:text-white/70 hover:bg-white/5"
             }`}
           >
             <span className="block text-[8px] opacity-50 mb-0.5">
@@ -602,26 +486,39 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
       <div
         ref={mountRef}
         className="w-full h-full select-none"
-        style={{ cursor: "grab" }}
+        style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onMouseLeave={() => { isDragging.current = false; setHoveredHotspot(null); }}
+        onMouseLeave={() => { isDragging.current = false; setWalkCursor(null); }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       />
 
-      {/* Fade overlay */}
-      <div className="absolute inset-0 bg-black pointer-events-none z-20 transition-opacity duration-300"
-        style={{ opacity: isFading ? 1 : 0 }} />
+      {/* Walk cursor — shows where you'll move on hover */}
+      {walkCursor && !isFading && (
+        <div
+          className="absolute pointer-events-none z-20 -translate-x-1/2 -translate-y-1/2"
+          style={{ left: walkCursor.x, top: walkCursor.y }}
+        >
+          <div className="w-8 h-8 rounded-full border-2 border-cyan/60 flex items-center justify-center animate-pulse">
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan/80" />
+          </div>
+        </div>
+      )}
+
+      {/* Crossfade overlay */}
+      {isFading && (
+        <div className="absolute inset-0 pointer-events-none z-10" />
+      )}
 
       {/* Loading */}
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-40">
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-2 border-cyan/30 border-t-cyan rounded-full animate-spin" />
-            <span className="font-mono text-xs text-cyan/70 tracking-widest">LOADING VIEWPOINT...</span>
+            <span className="font-mono text-xs text-cyan/70 tracking-widest">LOADING TOUR...</span>
           </div>
         </div>
       )}
@@ -631,22 +528,18 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-cyan animate-pulse" />
           <span className="font-mono text-[10px] text-cyan tracking-widest uppercase">
-            VIRTUAL TOUR · {currentVP.label}
+            FREE ROAM · {currentVP.label}
           </span>
           <span className="font-mono text-[9px] text-white/30 ml-1">
             {currentVP.floor === "upper" ? "▲ Upper" : "● Ground"}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setShowInfo(!showInfo)}
-            className={`p-1.5 rounded transition-colors ${showInfo ? "bg-cyan/20 text-cyan" : "bg-white/10 text-white/60 hover:text-white"}`}>
-            <Info size={12} />
-          </button>
           <button onClick={() => setShowMap(!showMap)}
             className={`p-1.5 rounded transition-colors ${showMap ? "bg-cyan/20 text-cyan" : "bg-white/10 text-white/60 hover:text-white"}`}>
             <Map size={12} />
           </button>
-          <button onClick={() => { lon.current = 0; lat.current = 0; }}
+          <button onClick={() => { lon.current = 0; lat.current = 0; targetLon.current = 0; targetLat.current = 0; isPanning.current = false; }}
             className="p-1.5 rounded bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors" title="Reset view">
             <RotateCcw size={12} />
           </button>
@@ -663,52 +556,17 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
         </div>
       </div>
 
-      {/* Viewpoint list */}
+      {/* Left: viewpoint list */}
       <ViewpointList />
 
       {/* Mini-map */}
       {showMap && <MiniMap />}
 
-      {/* Hotspot hover tooltip */}
-      {hoveredHotspot !== null && (
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 bg-black/85 border border-cyan/30 rounded-full pointer-events-none">
-          <span className="font-mono text-[10px] text-cyan tracking-wider">
-            <Navigation size={10} className="inline mr-1.5 -mt-0.5" />
-            {currentVP.connections.find((c) => c.to === hoveredHotspot)?.label ?? "Navigate"}
-          </span>
-        </div>
-      )}
-
-      {/* Double-click navigation hint */}
-      {navHint && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 px-4 py-2 bg-black/90 border border-cyan/40 rounded-lg pointer-events-none">
-          <span className="font-mono text-xs text-cyan tracking-wider">{navHint}</span>
-        </div>
-      )}
-
-      {/* Info panel */}
-      {showInfo && (
-        <div className="absolute top-12 right-3 z-30 w-52 bg-black/90 border border-cyan/20 rounded-lg p-3 backdrop-blur-sm">
-          <h3 className="font-mono text-[10px] text-cyan tracking-wider mb-2">VIEWPOINT INFO</h3>
-          <p className="font-mono text-[10px] text-white/70 mb-1">#{currentVP.id} · {currentVP.label}</p>
-          <p className="font-mono text-[9px] text-white/40 mb-2">{currentVP.floor === "upper" ? "Upper Floor" : "Ground Floor"}</p>
-          <div className="border-t border-white/10 pt-2">
-            <p className="font-mono text-[9px] text-white/50 mb-1">EXITS ({currentVP.connections.length})</p>
-            {currentVP.connections.map((c) => (
-              <button key={c.to} onClick={() => navigateTo(c.to)}
-                className="block w-full text-left font-mono text-[9px] text-cyan/70 hover:text-cyan py-0.5 transition-colors">
-                → {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Bottom hint bar */}
+      {/* Bottom hint */}
       {!isLoading && (
         <div className="absolute bottom-0 left-0 right-0 z-30 flex items-center justify-center py-2 bg-gradient-to-t from-black/70 to-transparent pointer-events-none">
           <span className="font-mono text-[9px] text-white/30 tracking-widest">
-            DRAG TO LOOK · DOUBLE-CLICK TO WALK · CLICK ARROWS TO NAVIGATE · {currentVP.connections.length} EXIT{currentVP.connections.length !== 1 ? "S" : ""}
+            DRAG TO LOOK · CLICK ANYWHERE TO WALK THERE · {VIEWPOINTS.length} LOCATIONS
           </span>
         </div>
       )}
