@@ -489,21 +489,26 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
 
       // ── Camera ──────────────────────────────────────────────────────────
       if (isPov && droneGroup) {
-        // Drone POV: camera at drone position, user can orbit/look around
-        const dronePos = droneGroup.position.clone();
-        camera.position.copy(dronePos).add(new THREE.Vector3(0, -0.02, 0));
+        // CCTV-style POV: elevated corner position looking down at the room
+        // Camera sits at a high corner like a security camera
+        const cctvPos = new THREE.Vector3(ROOM_W / 2 - 0.3, ROOM_H - 0.2, -ROOM_D / 2 + 0.3);
+        camera.position.copy(cctvPos);
 
-        // Calculate look direction based on user's yaw/pitch orbit
+        // User can orbit the look target with drag
         const yaw = povOrbitRef.current.yaw;
         const pitch = povOrbitRef.current.pitch;
 
-        // Start with drone's forward direction, then apply user orbit
-        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(droneGroup.quaternion);
-        // Create a rotation from yaw/pitch
-        const euler = new THREE.Euler(pitch, yaw, 0, "YXZ");
-        const lookDir = fwd.clone().applyEuler(euler).normalize();
+        // Base look direction: towards room center and slightly down
+        const baseLookTarget = new THREE.Vector3(0, 0.5, 0);
+        // Apply user's yaw/pitch offset to the look target
+        const offset = new THREE.Vector3(
+          Math.sin(yaw) * 4,
+          Math.sin(pitch) * 3,
+          Math.cos(yaw) * 4
+        );
+        const lookTarget = baseLookTarget.clone().add(offset);
 
-        camera.lookAt(dronePos.clone().add(lookDir.multiplyScalar(5)));
+        camera.lookAt(lookTarget);
         camera.fov = povZoomRef.current;
         camera.updateProjectionMatrix();
       } else {

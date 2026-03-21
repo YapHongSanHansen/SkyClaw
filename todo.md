@@ -46,3 +46,4 @@
 - [x] Make drone bright white color for stage visibility from far away
 - [x] Improve Drone POV: allow scroll/orbit to look around inside the point cloud
 - [x] Make 3D cafe walkthrough much brighter for stage presentation (increase ambient, directional, environment lighting)
+- [x] Fix Drone POV to CCTV-style elevated corner view looking down at the room (not stuck between points)
