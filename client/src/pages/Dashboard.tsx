@@ -231,24 +231,19 @@ export default function Dashboard() {
           setTelemetry((t) => ({ ...t, droneStatus: "online" }));
           addMessage("openclaw",
             `Virtual tour ready! You're now inside the cafe.\n\n` +
-            `🎮 Controls:\n` +
+            `Controls:\n` +
             `• Drag to look around in 360°\n` +
-            `• Click the glowing cyan arrows to walk to the next viewpoint\n` +
-            `• Use the mini-map (bottom-right) to jump to any spot\n` +
-            `• Use the viewpoint list (left) to teleport\n\n` +
-            `7 viewpoints connected across 2 floors. Explore freely!`
+            `• DOUBLE-CLICK anywhere to walk in that direction\n` +
+            `• Click the glowing arrows to navigate\n` +
+            `• Mini-map (bottom-right) to jump to any spot\n\n` +
+            `7 viewpoints across 2 floors. Share link ready!`
           );
 
-          // Also generate a 3D model from the main hall
-          setTimeout(() => {
-            addMessage("openclaw", "Also generating a 3D model from the main hall view for your social media post...");
-            const mainHall = VIEWPOINTS.find((v: Viewpoint) => v.id === 5);
-            if (mainHall) generateFromImage(mainHall.url);
-          }, 2000);
+          // Tour IS the 3D output — no separate model generation needed
         }, 1500);
       }
     }, 300);
-  }, [addMessage, generateFromImage]);
+  }, [addMessage]);
 
   const simulateScan = useCallback(() => {
     setIsScanning(true);

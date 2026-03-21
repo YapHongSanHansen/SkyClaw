@@ -23,3 +23,6 @@
 - [x] Build VirtualTour component: Three.js 360° sphere + clickable hotspot arrows to walk between viewpoints
 - [x] Add mini-map floor plan overlay with current position indicator
 - [x] Wire TOUR view mode into Dashboard (replaces panorama, triggered by cafe scan)
+- [x] Add double-click-to-navigate in VirtualTour (click bearing → nearest connected viewpoint)
+- [x] Improve hotspot visuals to Google Maps-style ground arrows
+- [x] Remove Tripo3D model generation from cafe scan flow (tour IS the output)
