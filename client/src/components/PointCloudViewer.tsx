@@ -487,6 +487,11 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         });
       }
 
+      // ── Hide drone in POV mode so it doesn't block the CCTV view ─────
+      if (droneGroup) {
+        droneGroup.visible = !isPov;
+      }
+
       // ── Camera ──────────────────────────────────────────────────────────
       if (isPov && droneGroup) {
         // CCTV-style POV: elevated corner position looking down at the room
