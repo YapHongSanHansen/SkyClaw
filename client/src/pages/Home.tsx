@@ -3,6 +3,7 @@
  * Design: Mission Control / Aerospace Command Center
  * Dark background, cyan accents, immersive hero with generated imagery
  */
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
 import { Radar, ArrowRight, Scan, Brain, Box, Building2, Gamepad2, GraduationCap, ChevronDown } from "lucide-react";
@@ -37,6 +38,10 @@ const steps = [
 ];
 
 export default function Home() {
+  // The userAuth hooks provides authentication state
+  // To implement login/logout functionality, simply call logout() or redirect to getLoginUrl()
+  let { user, loading, error, isAuthenticated, logout } = useAuth();
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
