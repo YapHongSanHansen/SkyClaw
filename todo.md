@@ -40,3 +40,6 @@
 - [x] Replace video frame tour in Dashboard with GLB viewer
 - [x] Build CafeWalkthrough: third-person character + follow camera + WASD movement + circular floor markers + info hotspots
 - [x] Wire CafeWalkthrough into Dashboard as 3D TOUR view mode
+- [x] Add animated 3D drone to scan viewport that flies in sync with waypoint progress
+- [x] Drone parks in corner after scan completes, hovering/scanning
+- [x] Add "Drone POV" toggle button to switch camera to drone's first-person view
