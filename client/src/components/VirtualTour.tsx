@@ -404,79 +404,100 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     }
   };
 
-  // ── Mini-map ─────────────────────────────────────────────────────────────────
+  // ── Mini-map (Google Maps-style dots with labels) ────────────────────────────
   const MiniMap = () => (
-    <div className="absolute bottom-10 right-3 z-30 w-40 bg-black/85 border border-cyan/20 rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
-      <div className="flex items-center justify-between px-2 py-1 border-b border-cyan/10">
-        <span className="font-mono text-[9px] text-cyan/70 tracking-wider">FLOOR PLAN</span>
-        <span className="font-mono text-[9px] text-white/40">{currentVP.floor === "upper" ? "▲ UPPER" : "● GROUND"}</span>
+    <div className="absolute bottom-10 right-3 z-30 w-44 rounded-xl overflow-hidden shadow-2xl"
+      style={{ background: "rgba(10,12,18,0.92)", border: "1px solid rgba(255,255,255,0.08)" }}>
+      {/* Header */}
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="w-1.5 h-1.5 rounded-full bg-cyan" />
+        <span className="font-mono text-[9px] text-white/50 tracking-widest uppercase">Location</span>
+        <span className="ml-auto font-mono text-[9px] text-cyan/60">{currentVP.label}</span>
       </div>
-      <svg viewBox="0 0 100 100" className="w-full h-32 p-1">
-        <rect x="5" y="5" width="90" height="90" rx="3" fill="none" stroke="rgba(0,229,255,0.1)" strokeWidth="1" />
-        <rect x="55" y="5" width="40" height="50" rx="2" fill="rgba(0,229,255,0.03)" stroke="rgba(0,229,255,0.07)" strokeWidth="0.5" />
-        <text x="75" y="16" textAnchor="middle" fill="rgba(0,229,255,0.2)" fontSize="4" fontFamily="monospace">UPPER</text>
-        <text x="30" y="95" textAnchor="middle" fill="rgba(0,229,255,0.2)" fontSize="4" fontFamily="monospace">GROUND</text>
 
-        {/* Connections */}
-        {[[1,2],[2,3],[3,4],[3,5],[4,5],[5,6],[6,7]].map(([a, b]) => {
+      {/* Map SVG */}
+      <svg viewBox="0 0 100 108" className="w-full" style={{ height: 140 }}>
+        {/* Light floor outlines */}
+        <rect x="8" y="6" width="84" height="96" rx="4"
+          fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.06)" strokeWidth="0.8" />
+        {/* Upper floor zone */}
+        <rect x="52" y="6" width="40" height="46" rx="3"
+          fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
+        <text x="72" y="15" textAnchor="middle" fill="rgba(255,255,255,0.15)" fontSize="4" fontFamily="sans-serif">Upper</text>
+        <text x="30" y="98" textAnchor="middle" fill="rgba(255,255,255,0.15)" fontSize="4" fontFamily="sans-serif">Ground</text>
+
+        {/* Path lines between viewpoints */}
+        {([[1,2],[2,3],[3,4],[3,5],[4,5],[5,6],[6,7]] as [number,number][]).map(([a, b]) => {
           const va = VIEWPOINTS.find(v => v.id === a)!;
           const vb = VIEWPOINTS.find(v => v.id === b)!;
           const isActive = currentId === a || currentId === b;
           return (
             <line key={`${a}-${b}`}
               x1={va.mapX} y1={va.mapY} x2={vb.mapX} y2={vb.mapY}
-              stroke={isActive ? "rgba(0,229,255,0.5)" : "rgba(0,229,255,0.12)"}
-              strokeWidth={isActive ? "1" : "0.5"}
+              stroke={isActive ? "rgba(66,133,244,0.7)" : "rgba(255,255,255,0.1)"}
+              strokeWidth={isActive ? "1.2" : "0.6"}
+              strokeDasharray={isActive ? "none" : "2,2"}
             />
           );
         })}
 
+        {/* Viewpoint dots — Google Maps style */}
         {VIEWPOINTS.map((vp) => {
           const isCurrent = vp.id === currentId;
           return (
             <g key={vp.id} style={{ cursor: "pointer" }} onClick={() => navigateTo(vp.id)}>
-              <circle cx={vp.mapX} cy={vp.mapY}
-                r={isCurrent ? 5 : 2.5}
-                fill={isCurrent ? "#00e5ff" : "rgba(0,229,255,0.25)"}
-                stroke={isCurrent ? "white" : "rgba(0,229,255,0.3)"}
-                strokeWidth={isCurrent ? "1.2" : "0.4"}
-              />
-              {isCurrent && (
-                <circle cx={vp.mapX} cy={vp.mapY} r="5" fill="none" stroke="rgba(0,229,255,0.4)" strokeWidth="0.7">
-                  <animate attributeName="r" from="5" to="12" dur="1.4s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.5" to="0" dur="1.4s" repeatCount="indefinite" />
-                </circle>
+              {/* Hover hit area */}
+              <circle cx={vp.mapX} cy={vp.mapY} r="8" fill="transparent" />
+
+              {isCurrent ? (
+                <>
+                  {/* Outer pulse ring */}
+                  <circle cx={vp.mapX} cy={vp.mapY} r="7" fill="rgba(66,133,244,0.15)">
+                    <animate attributeName="r" from="5" to="11" dur="1.6s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" from="0.5" to="0" dur="1.6s" repeatCount="indefinite" />
+                  </circle>
+                  {/* White ring */}
+                  <circle cx={vp.mapX} cy={vp.mapY} r="5.5"
+                    fill="#4285F4" stroke="white" strokeWidth="1.5" />
+                  {/* Inner dot */}
+                  <circle cx={vp.mapX} cy={vp.mapY} r="2" fill="white" />
+                </>
+              ) : (
+                <>
+                  {/* Inactive dot — small grey circle with white border */}
+                  <circle cx={vp.mapX} cy={vp.mapY} r="3.5"
+                    fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" />
+                  <circle cx={vp.mapX} cy={vp.mapY} r="1.2" fill="rgba(255,255,255,0.6)" />
+                </>
               )}
-              <text x={vp.mapX} y={vp.mapY - 7} textAnchor="middle"
-                fill={isCurrent ? "white" : "rgba(255,255,255,0.3)"}
-                fontSize="3.5" fontFamily="monospace">{vp.id}</text>
+
+              {/* Label — only show for current and adjacent */}
+              {(isCurrent || Math.abs(vp.mapX - currentVP.mapX) + Math.abs(vp.mapY - currentVP.mapY) < 30) && (
+                <>
+                  <rect
+                    x={vp.mapX - vp.label.length * 1.8}
+                    y={vp.mapY - (isCurrent ? 12 : 9)}
+                    width={vp.label.length * 3.6}
+                    height="5"
+                    rx="1"
+                    fill={isCurrent ? "rgba(66,133,244,0.9)" : "rgba(0,0,0,0.6)"}
+                  />
+                  <text
+                    x={vp.mapX} y={vp.mapY - (isCurrent ? 8.5 : 5.5)}
+                    textAnchor="middle"
+                    fill={isCurrent ? "white" : "rgba(255,255,255,0.6)"}
+                    fontSize={isCurrent ? "3.8" : "3.2"}
+                    fontFamily="sans-serif"
+                    fontWeight={isCurrent ? "bold" : "normal"}
+                  >
+                    {vp.label}
+                  </text>
+                </>
+              )}
             </g>
           );
         })}
       </svg>
-    </div>
-  );
-
-  // ── Viewpoint list (left sidebar) ────────────────────────────────────────────
-  const ViewpointList = () => (
-    <div className="absolute left-3 top-12 bottom-10 z-30 w-36 flex flex-col gap-1 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
-      {VIEWPOINTS.map((vp) => {
-        const isCurrent = vp.id === currentId;
-        return (
-          <button key={vp.id} onClick={() => navigateTo(vp.id)}
-            className={`text-left px-2 py-1.5 rounded-md transition-all text-[10px] font-mono leading-tight ${
-              isCurrent
-                ? "bg-cyan/20 border border-cyan/40 text-cyan"
-                : "bg-black/40 border border-white/5 text-white/35 hover:text-white/70 hover:bg-white/5"
-            }`}
-          >
-            <span className="block text-[8px] opacity-50 mb-0.5">
-              {vp.floor === "upper" ? "▲ UPPER" : "● GROUND"} · #{vp.id}
-            </span>
-            {vp.label}
-          </button>
-        );
-      })}
     </div>
   );
 
@@ -555,9 +576,6 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
           )}
         </div>
       </div>
-
-      {/* Left: viewpoint list */}
-      <ViewpointList />
 
       {/* Mini-map */}
       {showMap && <MiniMap />}

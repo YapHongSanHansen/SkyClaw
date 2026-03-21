@@ -29,3 +29,4 @@
 - [x] Remove Tripo3D GLB model viewer, merge 3D MODEL tab into TOUR (same immersive cafe tour)
 - [x] Clear stale localStorage model cache so factory image never shows
 - [x] Free-roam VirtualTour: click anywhere = new POV, crossfade between panoramas, no fixed hotspots
+- [x] Remove dark sidebar list, replace with Google Maps-style dots on mini-map
