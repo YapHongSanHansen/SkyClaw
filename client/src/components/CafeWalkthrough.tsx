@@ -132,7 +132,7 @@ export default function CafeWalkthrough() {
     keys: {} as Record<string, boolean>,
     charPos: new THREE.Vector3(0, 0, 4),
     charAngle: Math.PI, // facing into the scene
-    camOffset: new THREE.Vector3(0, 2.2, 3.5),
+    camOffset: new THREE.Vector3(0, 1.6, 2.2),
     isMoving: false,
     walkCycle: 0,
     nearHotspot: null as string | null,
@@ -163,14 +163,14 @@ export default function CafeWalkthrough() {
       camera.updateProjectionMatrix();
     };
 
-    // Scene
+    // Scene — warm interior environment so there's never a black void
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a24);
-    scene.fog = new THREE.Fog(0x1a1a24, 25, 60);
+    scene.background = new THREE.Color(0x2a1f15);
+    scene.fog = new THREE.Fog(0x2a1f15, 8, 18);
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 100);
-    camera.position.set(0, 2.2, 7.5);
+    // Camera — narrower FOV keeps view inside the cafe, no outside edges visible
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(0, 1.6, 6.2);
 
     // Lighting — BRIGHT for stage presentation on large screens
     const ambient = new THREE.AmbientLight(0xffffff, 2.0);
@@ -214,6 +214,27 @@ export default function CafeWalkthrough() {
     const accentLight = new THREE.PointLight(0x00e5ff, 0.8, 15);
     accentLight.position.set(2, 2, -3);
     scene.add(accentLight);
+
+    // Large environment sphere — warm cafe interior color so you never see black void
+    const envSphereGeo = new THREE.SphereGeometry(40, 32, 32);
+    const envSphereMat = new THREE.MeshBasicMaterial({
+      color: 0x2a1f15,
+      side: THREE.BackSide,
+    });
+    const envSphere = new THREE.Mesh(envSphereGeo, envSphereMat);
+    scene.add(envSphere);
+
+    // Ground plane extending beyond the model to cover any gaps
+    const groundGeo = new THREE.PlaneGeometry(60, 60);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x3d2b1a,
+      roughness: 0.9,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.01;
+    ground.receiveShadow = true;
+    scene.add(ground);
 
     // Character
     const character = buildCharacter();
@@ -340,9 +361,9 @@ export default function CafeWalkthrough() {
         st.charPos.z += Math.cos(st.charAngle) * SPEED * delta;
       }
 
-      // Clamp to reasonable bounds
-      st.charPos.x = THREE.MathUtils.clamp(st.charPos.x, -8, 8);
-      st.charPos.z = THREE.MathUtils.clamp(st.charPos.z, -8, 8);
+      // Clamp character to stay inside the cafe model bounds
+      st.charPos.x = THREE.MathUtils.clamp(st.charPos.x, -5, 5);
+      st.charPos.z = THREE.MathUtils.clamp(st.charPos.z, -6, 5);
 
       character.position.copy(st.charPos);
       character.rotation.y = st.charAngle;
@@ -390,11 +411,13 @@ export default function CafeWalkthrough() {
         setNearLabel(hs ? hs.label : null);
       }
 
-      // Smooth follow camera
+      // Smooth follow camera — clamped to stay inside the cafe
+      const rawCamX = st.charPos.x + Math.sin(st.charAngle) * st.camOffset.z;
+      const rawCamZ = st.charPos.z + Math.cos(st.charAngle) * st.camOffset.z;
       const targetCamPos = new THREE.Vector3(
-        st.charPos.x + Math.sin(st.charAngle) * st.camOffset.z,
+        THREE.MathUtils.clamp(rawCamX, -5.5, 5.5),
         st.charPos.y + st.camOffset.y,
-        st.charPos.z + Math.cos(st.charAngle) * st.camOffset.z
+        THREE.MathUtils.clamp(rawCamZ, -6.5, 5.5)
       );
       camera.position.lerp(targetCamPos, 0.08);
       const lookTarget = new THREE.Vector3(
