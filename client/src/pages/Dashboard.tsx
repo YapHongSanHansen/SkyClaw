@@ -21,8 +21,7 @@ import Navbar from "@/components/Navbar";
 import ChatTerminal from "@/components/ChatTerminal";
 import TelemetryPanel from "@/components/TelemetryPanel";
 import PointCloudViewer from "@/components/PointCloudViewer";
-import CafeModelViewer from "@/components/CafeModelViewer";
-import VirtualTour, { FRAMES } from "@/components/VirtualTour";
+import CafeWalkthrough from "@/components/CafeWalkthrough";
 import { Maximize2, Minimize2, Scan, Map, Share2, Check } from "lucide-react";
 
 interface Message {
@@ -93,10 +92,10 @@ export default function Dashboard() {
     setViewMode("pointcloud");
     setTelemetry((t) => ({ ...t, droneStatus: "scanning", altitude: 1.8, speed: 0.6 }));
 
-    addMessage("openclaw", `Acknowledged. Initiating cafe scan sequence...\nDrone will fly a 360° sweep capturing ${FRAMES.length} positions from your walkthrough video.`);
+    addMessage("openclaw", `Acknowledged. Initiating cafe scan sequence...\nDrone will fly a 360° sweep capturing 62 positions from your walkthrough video.`);
     setTimeout(() => addMessage("system", "Drone armed. Motors spinning up."), 600);
     setTimeout(() => addMessage("system", "Takeoff complete. Altitude: 1.8m. Entering cafe airspace."), 1800);
-    setTimeout(() => addMessage("openclaw", `Executing panoramic sweep. Capturing ${FRAMES.length} frames.`), 2800);
+    setTimeout(() => addMessage("openclaw", `Executing panoramic sweep. Capturing 62 frames.`), 2800);
 
     let progress = 0;
     let waypoint = 0;
@@ -106,8 +105,8 @@ export default function Dashboard() {
       progress += 3;
       seconds += 1;
       if (progress % 14 === 0) {
-        waypoint = Math.min(waypoint + 1, FRAMES.length);
-        addMessage("system", `Frame ${waypoint}/${FRAMES.length} captured.`);
+        waypoint = Math.min(waypoint + 1, 62);
+        addMessage("system", `Frame ${waypoint}/62 captured.`);
       }
 
       const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -121,7 +120,7 @@ export default function Dashboard() {
         altitude: 1.8 + Math.sin(progress * 0.04) * 0.4,
         speed: 0.4 + Math.random() * 0.4,
         flightTime: `${mins}:${secs}`,
-        totalWaypoints: FRAMES.length,
+        totalWaypoints: 62,
       }));
 
       if (progress >= 100) {
@@ -129,11 +128,11 @@ export default function Dashboard() {
         setIsScanning(false);
         setTelemetry((t) => ({
           ...t, droneStatus: "processing", speed: 0, altitude: 0,
-          scanProgress: 100, currentWaypoint: FRAMES.length,
-          imagesCaptures: FRAMES.length,
+          scanProgress: 100, currentWaypoint: 62,
+          imagesCaptures: 62,
         }));
 
-        addMessage("system", `Scan complete. ${FRAMES.length} frames captured.`);
+        addMessage("system", `Scan complete. 62 frames captured.`);
         addMessage("openclaw", "Building immersive virtual tour from your cafe photos...");
 
         setTimeout(() => {
@@ -208,7 +207,7 @@ export default function Dashboard() {
 
     if (isCafeScanCommand(lower) || lower.includes("scan the cafe") || lower.includes("scan cafe") || lower.includes("virtual tour") || lower.includes("tour the cafe")) {
       setTimeout(() => {
-        addMessage("openclaw", `Understood! Scanning the cafe for an immersive virtual tour.\nDrone will capture ${FRAMES.length} positions as it walks through the space.`);
+        addMessage("openclaw", `Understood! Scanning the cafe for an immersive virtual tour.\nDrone will capture 62 positions as it walks through the space.`);
         setTimeout(() => simulateCafeScan(), 800);
       }, 400);
     } else if (lower.includes("tour") || lower.includes("360") || lower.includes("walk") || lower.includes("explore")) {
@@ -249,7 +248,7 @@ export default function Dashboard() {
   }, [addMessage, simulateCafeScan, simulateScan, telemetry]);
 
   const viewportLabel =
-    viewMode === "tour" ? "3D Model | Cafe" : "3D Viewport | Point Cloud";
+    viewMode === "tour" ? "3D Walkthrough | Cafe" : "3D Viewport | Point Cloud";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -329,7 +328,7 @@ export default function Dashboard() {
 
             {/* Viewport content */}
             {viewMode === "tour" ? (
-              <CafeModelViewer />
+              <CafeWalkthrough />
             ) : (
               <PointCloudViewer className="w-full h-full" isScanning={isScanning} scanProgress={scanProgress} />
             )}

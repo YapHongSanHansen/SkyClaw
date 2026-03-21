@@ -38,3 +38,5 @@
 - [x] Upload 21_03_2026.glb to CDN
 - [x] Build GLB model viewer with Three.js OrbitControls (drag orbit, scroll zoom, double-click walk)
 - [x] Replace video frame tour in Dashboard with GLB viewer
+- [x] Build CafeWalkthrough: third-person character + follow camera + WASD movement + circular floor markers + info hotspots
+- [x] Wire CafeWalkthrough into Dashboard as 3D TOUR view mode
