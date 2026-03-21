@@ -26,3 +26,5 @@
 - [x] Add double-click-to-navigate in VirtualTour (click bearing → nearest connected viewpoint)
 - [x] Improve hotspot visuals to Google Maps-style ground arrows
 - [x] Remove Tripo3D model generation from cafe scan flow (tour IS the output)
+- [x] Remove Tripo3D GLB model viewer, merge 3D MODEL tab into TOUR (same immersive cafe tour)
+- [x] Clear stale localStorage model cache so factory image never shows
