@@ -1,16 +1,18 @@
 /**
- * VirtualTour — Google Street View-style immersive tour.
+ * VirtualTour — Google Street View-style immersive 360° tour.
  *
- * Uses a LARGE FLAT PLANE projection (not a sphere) so regular wide-angle
- * cafe photos display without polar distortion. The camera orbits around
- * the center looking at the plane — drag to pan, click to navigate.
+ * Uses a sphere with a NARROW FOV camera (75°). This is the same technique
+ * Google Street View uses: the photo is mapped onto the inside of a sphere,
+ * but the camera FOV is kept narrow so you only see the undistorted equatorial
+ * band. The polar pinching only occurs at the very top/bottom of the sphere
+ * which is never visible at this FOV. Drag to look around freely in 3D.
  *
- * Layout matches Google Street View:
- *  - Full bright photo fills the viewport
- *  - Top-left: dark info card (location name + floor)
+ * Layout:
+ *  - Full bright photo fills the viewport (sphere interior)
+ *  - Top-left: Google Maps-style dark info card
  *  - Bottom-left: mini-map with orange pegman + blue dots
  *  - Top-right: fullscreen + close
- *  - Click to walk toward that direction
+ *  - Click anywhere to navigate to nearest viewpoint in that direction
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
@@ -24,21 +26,73 @@ export interface Viewpoint {
   sublabel: string;
   floor: "ground" | "upper";
   url: string;
-  /** Logical 2D position for mini-map */
   mapX: number;
   mapY: number;
   connects: number[];
 }
 
 export const VIEWPOINTS: Viewpoint[] = [
-  { id: 1, label: "Upper Landing",    sublabel: "2nd Floor · Cafe",    floor: "upper",  connects: [2],         url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-1_1c4e8fa8.jpeg", mapX: 75, mapY: 18 },
-  { id: 2, label: "Staircase Mid",    sublabel: "Staircase · Cafe",    floor: "upper",  connects: [1, 3],      url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-2_ac2cb743.jpeg", mapX: 65, mapY: 38 },
-  { id: 3, label: "Seating Area",     sublabel: "Ground Floor · Cafe", floor: "ground", connects: [2, 4, 5],   url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-3_e9de660f.jpeg", mapX: 55, mapY: 58 },
-  { id: 4, label: "Window Side",      sublabel: "Ground Floor · Cafe", floor: "ground", connects: [3, 5],      url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-4_bb2a7c9e.jpeg", mapX: 20, mapY: 53 },
-  { id: 5, label: "Main Hall",        sublabel: "Ground Floor · Cafe", floor: "ground", connects: [3, 4, 6],   url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-5_0e240249.jpeg", mapX: 40, mapY: 73 },
-  { id: 6, label: "Bar Counter",      sublabel: "Ground Floor · Cafe", floor: "ground", connects: [5, 7],      url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-6_0178eefa.jpeg", mapX: 30, mapY: 86 },
-  { id: 7, label: "Spiral Staircase", sublabel: "Ground Floor · Cafe", floor: "ground", connects: [6],         url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-7_d5f67861.jpeg", mapX: 50, mapY: 90 },
+  { id: 1, label: "Upper Landing",    sublabel: "2nd Floor · Cafe",    floor: "upper",  connects: [2],       url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-1_1c4e8fa8.jpeg", mapX: 75, mapY: 18 },
+  { id: 2, label: "Staircase Mid",    sublabel: "Staircase · Cafe",    floor: "upper",  connects: [1, 3],    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-2_ac2cb743.jpeg", mapX: 65, mapY: 38 },
+  { id: 3, label: "Seating Area",     sublabel: "Ground Floor · Cafe", floor: "ground", connects: [2, 4, 5], url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-3_e9de660f.jpeg", mapX: 55, mapY: 58 },
+  { id: 4, label: "Window Side",      sublabel: "Ground Floor · Cafe", floor: "ground", connects: [3, 5],    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-4_bb2a7c9e.jpeg", mapX: 20, mapY: 53 },
+  { id: 5, label: "Main Hall",        sublabel: "Ground Floor · Cafe", floor: "ground", connects: [3, 4, 6], url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-5_0e240249.jpeg", mapX: 40, mapY: 73 },
+  { id: 6, label: "Bar Counter",      sublabel: "Ground Floor · Cafe", floor: "ground", connects: [5, 7],    url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-6_0178eefa.jpeg", mapX: 30, mapY: 86 },
+  { id: 7, label: "Spiral Staircase", sublabel: "Ground Floor · Cafe", floor: "ground", connects: [6],       url: "https://d2xsxph8kpxj0f.cloudfront.net/310519663328986460/MFw4EaEo6cHsQkkfMQCXGv/cafe-pano-7_d5f67861.jpeg", mapX: 50, mapY: 90 },
 ];
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Convert lon/lat (degrees) to a look-at target on the sphere */
+function lookTarget(lon: number, lat: number, r = 500): THREE.Vector3 {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon + 180);
+  return new THREE.Vector3(
+    -r * Math.sin(phi) * Math.cos(theta),
+     r * Math.cos(phi),
+     r * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+/** Get the world direction of a screen click */
+function clickDirection(
+  clientX: number, clientY: number,
+  container: HTMLElement,
+  camera: THREE.PerspectiveCamera
+): THREE.Vector3 {
+  const rect = container.getBoundingClientRect();
+  const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+  return ray.ray.direction.clone().normalize();
+}
+
+/** Find the best viewpoint to navigate to from a click direction */
+function bestViewpoint(dir: THREE.Vector3, currentId: number): Viewpoint {
+  const current = VIEWPOINTS.find(v => v.id === currentId)!;
+  const clickBearing = Math.atan2(dir.x, -dir.z); // bearing in XZ plane
+
+  let best: Viewpoint = current;
+  let bestScore = Infinity;
+
+  for (const vp of VIEWPOINTS) {
+    if (vp.id === currentId) continue;
+    const dx = vp.mapX - current.mapX;
+    const dy = vp.mapY - current.mapY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) continue;
+    // Map Y increases downward, treat as -Z in world
+    const vpBearing = Math.atan2(dx, -dy);
+    let angDiff = Math.abs(clickBearing - vpBearing);
+    if (angDiff > Math.PI) angDiff = 2 * Math.PI - angDiff;
+    const score = angDiff * 2.5 + dist * 0.08;
+    if (score < bestScore) { bestScore = score; best = vp; }
+  }
+
+  if (bestScore > Math.PI * 0.65) return current;
+  return best;
+}
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -51,33 +105,33 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const planeARef = useRef<THREE.Mesh | null>(null);
-  const planeBRef = useRef<THREE.Mesh | null>(null);
+  const sphereARef = useRef<THREE.Mesh | null>(null);
+  const sphereBRef = useRef<THREE.Mesh | null>(null);
   const animFrameRef = useRef<number>(0);
 
-  // Camera orbit state (azimuth = left/right, elevation = up/down)
-  const azimuth = useRef(0);       // degrees, horizontal pan
-  const elevation = useRef(0);     // degrees, vertical tilt
-  const targetAz = useRef(0);
-  const targetEl = useRef(0);
+  // Camera orientation
+  const lon = useRef(0);
+  const lat = useRef(0);
+  const targetLon = useRef(0);
+  const targetLat = useRef(0);
 
+  // Drag state
   const isDragging = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
   const dragDist = useRef(0);
   const lastClickTime = useRef(0);
 
-  // Fade
+  // Crossfade
   const fadeProgress = useRef(0);
   const isFadingRef = useRef(false);
 
   const [currentId, setCurrentId] = useState(initialId);
   const currentIdRef = useRef(initialId);
   const [isLoading, setIsLoading] = useState(true);
-  const [isFading, setIsFading] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [navHint, setNavHint] = useState<string | null>(null);
 
-  const currentVP = VIEWPOINTS.find((v) => v.id === currentId)!;
+  const currentVP = VIEWPOINTS.find(v => v.id === currentId)!;
 
   // ── Three.js init ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -91,63 +145,46 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     rendererRef.current = renderer;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
 
-    // Camera sits at origin, looks at a large plane in front
-    const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 2000);
-    camera.position.set(0, 0, 0);
+    // Narrow FOV (75°) = only the undistorted equatorial band is visible.
+    // Polar pinching exists but is pushed far out of view.
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      container.clientWidth / container.clientHeight,
+      0.1, 1000
+    );
+    camera.position.set(0, 0, 0.01);
     cameraRef.current = camera;
 
-    // Two large planes for crossfade — positioned far in front of camera
-    const PLANE_DIST = 100;
-    const PLANE_W = 240;  // wide enough to fill FOV when panning
-    const PLANE_H = 135;  // 16:9 aspect
-
-    const makePane = (opacity: number) => {
-      const geo = new THREE.PlaneGeometry(PLANE_W, PLANE_H);
-      const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity, depthWrite: false });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(0, 0, -PLANE_DIST);
-      return mesh;
+    // Two spheres for crossfade — inverted so we see the inside
+    const makeSphere = (opacity: number) => {
+      const geo = new THREE.SphereGeometry(500, 128, 64);
+      geo.scale(-1, 1, 1); // invert normals to see inside
+      const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity });
+      return new THREE.Mesh(geo, mat);
     };
 
-    const planeA = makePane(1);
-    const planeB = makePane(0);
-    scene.add(planeA, planeB);
-    planeARef.current = planeA;
-    planeBRef.current = planeB;
+    const sphereA = makeSphere(1);
+    const sphereB = makeSphere(0);
+    scene.add(sphereA, sphereB);
+    sphereARef.current = sphereA;
+    sphereBRef.current = sphereB;
 
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
 
-      // Smooth pan
-      azimuth.current += (targetAz.current - azimuth.current) * 0.1;
-      elevation.current += (targetEl.current - elevation.current) * 0.1;
+      // Smooth camera pan
+      lon.current += (targetLon.current - lon.current) * 0.1;
+      lat.current += (targetLat.current - lat.current) * 0.1;
+      lat.current = Math.max(-60, Math.min(60, lat.current));
 
-      // Clamp elevation
-      elevation.current = Math.max(-35, Math.min(35, elevation.current));
-      targetEl.current = Math.max(-35, Math.min(35, targetEl.current));
+      camera.lookAt(lookTarget(lon.current, lat.current));
 
-      // Rotate the planes around camera (simulates camera rotation without sphere distortion)
-      const azRad = THREE.MathUtils.degToRad(azimuth.current);
-      const elRad = THREE.MathUtils.degToRad(elevation.current);
-      const DIST = PLANE_DIST;
-
-      // Plane center follows camera look direction
-      const x = -Math.sin(azRad) * Math.cos(elRad) * DIST;
-      const y = Math.sin(elRad) * DIST;
-      const z = -Math.cos(azRad) * Math.cos(elRad) * DIST;
-
-      planeA.position.set(x, y, z);
-      planeB.position.set(x, y, z);
-      planeA.lookAt(camera.position);
-      planeB.lookAt(camera.position);
-
-      // Fade
+      // Crossfade
       if (isFadingRef.current) {
-        fadeProgress.current = Math.min(fadeProgress.current + 0.06, 1);
-        const matA = planeARef.current!.material as THREE.MeshBasicMaterial;
-        const matB = planeBRef.current!.material as THREE.MeshBasicMaterial;
+        fadeProgress.current = Math.min(fadeProgress.current + 0.055, 1);
+        const matA = sphereARef.current!.material as THREE.MeshBasicMaterial;
+        const matB = sphereBRef.current!.material as THREE.MeshBasicMaterial;
         matA.opacity = 1 - fadeProgress.current;
         matB.opacity = fadeProgress.current;
         if (fadeProgress.current >= 1) {
@@ -159,7 +196,6 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
           matB.needsUpdate = true;
           fadeProgress.current = 0;
           isFadingRef.current = false;
-          setIsFading(false);
         }
       }
 
@@ -188,20 +224,23 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     const vp = VIEWPOINTS.find(v => v.id === initialId)!;
     new THREE.TextureLoader().load(vp.url, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
-      // Fit texture to plane preserving aspect ratio
-      const mat = planeARef.current!.material as THREE.MeshBasicMaterial;
+      const mat = sphereARef.current!.material as THREE.MeshBasicMaterial;
       mat.map = tex;
       mat.needsUpdate = true;
       setIsLoading(false);
     });
   }, []); // eslint-disable-line
 
-  // ── Navigate to viewpoint ────────────────────────────────────────────────────
-  const navigateTo = useCallback((id: number, panToAz?: number) => {
+  // ── Navigate ─────────────────────────────────────────────────────────────────
+  const navigateTo = useCallback((id: number, dir?: THREE.Vector3) => {
     if (id === currentIdRef.current || isFadingRef.current) return;
 
-    if (panToAz !== undefined) {
-      targetAz.current = panToAz;
+    if (dir) {
+      // Pan camera toward the click direction
+      const newLon = THREE.MathUtils.radToDeg(Math.atan2(dir.x, -dir.z));
+      const newLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, dir.y))));
+      targetLon.current = newLon;
+      targetLat.current = Math.max(-30, Math.min(30, newLat));
     }
 
     const vp = VIEWPOINTS.find(v => v.id === id)!;
@@ -210,97 +249,70 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
 
     isFadingRef.current = true;
     fadeProgress.current = 0;
-    setIsFading(true);
     currentIdRef.current = id;
     setCurrentId(id);
 
     new THREE.TextureLoader().load(vp.url, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
-      const matB = planeBRef.current!.material as THREE.MeshBasicMaterial;
+      const matB = sphereBRef.current!.material as THREE.MeshBasicMaterial;
       matB.map = tex;
       matB.needsUpdate = true;
     });
   }, []);
 
-  // ── Click: find best viewpoint from click position ───────────────────────────
-  const handleClick = useCallback((clientX: number, clientY: number) => {
-    if (isFadingRef.current) return;
+  // ── Handle click/tap ─────────────────────────────────────────────────────────
+  const handleNavigationClick = useCallback((clientX: number, clientY: number) => {
     const container = mountRef.current;
-    if (!container) return;
+    const camera = cameraRef.current;
+    if (!container || !camera || isFadingRef.current) return;
 
-    const rect = container.getBoundingClientRect();
-    // NDC: -1 to +1
-    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-    // ndcY not used for azimuth but kept for future elevation-based logic
+    const dir = clickDirection(clientX, clientY, container, camera);
+    const target = bestViewpoint(dir, currentIdRef.current);
 
-    // Convert horizontal click position to a world azimuth offset
-    const clickAzOffset = ndcX * 30; // ±30° from center based on click position
-    const clickAz = azimuth.current + clickAzOffset;
-
-    // Find the viewpoint whose map position best matches the click direction
-    const current = VIEWPOINTS.find(v => v.id === currentIdRef.current)!;
-    let best: Viewpoint | null = null;
-    let bestScore = Infinity;
-
-    for (const vp of VIEWPOINTS) {
-      if (vp.id === currentIdRef.current) continue;
-      // Use map positions to estimate bearing
-      const dx = vp.mapX - current.mapX;
-      const dy = vp.mapY - current.mapY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 1) continue;
-      // Map bearing (in degrees, 0 = right, 90 = down in map coords)
-      const mapBearing = Math.atan2(dy, dx) * (180 / Math.PI);
-      // Compare to click azimuth (normalise to same range)
-      let diff = Math.abs(clickAz - mapBearing);
-      if (diff > 180) diff = 360 - diff;
-      const score = diff + dist * 0.3;
-      if (score < bestScore) { bestScore = score; best = vp; }
-    }
-
-    if (best && bestScore < 120) {
-      navigateTo(best.id, clickAzOffset);
+    if (target.id !== currentIdRef.current) {
+      navigateTo(target.id, dir);
     } else {
-      // Just pan camera toward click
-      targetAz.current += ndcX * 25;
+      // Just pan toward click
+      const newLon = THREE.MathUtils.radToDeg(Math.atan2(dir.x, -dir.z));
+      const newLat = THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, dir.y))));
+      targetLon.current = newLon;
+      targetLat.current = Math.max(-50, Math.min(50, newLat));
     }
   }, [navigateTo]);
 
-  // ── Mouse events ─────────────────────────────────────────────────────────────
+  // ── Mouse ────────────────────────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent) => {
     isDragging.current = true;
     dragDist.current = 0;
     lastMouse.current = { x: e.clientX, y: e.clientY };
   };
-
   const onMouseMove = (e: React.MouseEvent) => {
     if (!isDragging.current) return;
     const dx = e.clientX - lastMouse.current.x;
     const dy = e.clientY - lastMouse.current.y;
     dragDist.current += Math.abs(dx) + Math.abs(dy);
-    targetAz.current -= dx * 0.15;
-    targetEl.current += dy * 0.12;
+    targetLon.current -= dx * 0.2;
+    targetLat.current = Math.max(-60, Math.min(60, targetLat.current + dy * 0.15));
     lastMouse.current = { x: e.clientX, y: e.clientY };
   };
-
   const onMouseUp = (e: React.MouseEvent) => {
     isDragging.current = false;
     if (dragDist.current < 6) {
       const now = Date.now();
+      const cx = e.clientX, cy = e.clientY;
       if (now - lastClickTime.current < 400) {
-        handleClick(e.clientX, e.clientY);
+        handleNavigationClick(cx, cy);
       } else {
-        const cx = e.clientX, cy = e.clientY;
         setTimeout(() => {
-          if (Date.now() - lastClickTime.current >= 380) handleClick(cx, cy);
+          if (Date.now() - lastClickTime.current >= 380) handleNavigationClick(cx, cy);
         }, 390);
       }
       lastClickTime.current = now;
     }
   };
 
-  // ── Touch events ─────────────────────────────────────────────────────────────
-  const lastTapTime = useRef(0);
+  // ── Touch ────────────────────────────────────────────────────────────────────
+  const lastTapRef = useRef(0);
   const onTouchStart = (e: React.TouchEvent) => {
     isDragging.current = true;
     dragDist.current = 0;
@@ -311,8 +323,8 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     const dx = e.touches[0].clientX - lastMouse.current.x;
     const dy = e.touches[0].clientY - lastMouse.current.y;
     dragDist.current += Math.abs(dx) + Math.abs(dy);
-    targetAz.current -= dx * 0.15;
-    targetEl.current += dy * 0.12;
+    targetLon.current -= dx * 0.2;
+    targetLat.current = Math.max(-60, Math.min(60, targetLat.current + dy * 0.15));
     lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
   const onTouchEnd = (e: React.TouchEvent) => {
@@ -320,15 +332,15 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
     if (dragDist.current < 12) {
       const t = e.changedTouches[0];
       const now = Date.now();
-      if (now - lastTapTime.current < 400) {
-        handleClick(t.clientX, t.clientY);
+      if (now - lastTapRef.current < 400) {
+        handleNavigationClick(t.clientX, t.clientY);
       } else {
         const cx = t.clientX, cy = t.clientY;
         setTimeout(() => {
-          if (Date.now() - lastTapTime.current >= 380) handleClick(cx, cy);
+          if (Date.now() - lastTapRef.current >= 380) handleNavigationClick(cx, cy);
         }, 390);
       }
-      lastTapTime.current = now;
+      lastTapRef.current = now;
     }
   };
 
@@ -375,13 +387,13 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
   return (
     <div
       className={`relative overflow-hidden ${isFullscreen ? "fixed inset-0 z-50" : "w-full h-full rounded-lg"}`}
-      style={{ background: "#111" }}
+      style={{ background: "#000" }}
     >
-      {/* Three.js canvas */}
+      {/* Three.js canvas — full viewport */}
       <div
         ref={mountRef}
         className="w-full h-full select-none"
-        style={{ cursor: isDragging.current ? "grabbing" : "default" }}
+        style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -391,9 +403,9 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
         onTouchEnd={onTouchEnd}
       />
 
-      {/* Loading */}
+      {/* Loading overlay */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center z-50" style={{ background: "rgba(0,0,0,0.7)" }}>
+        <div className="absolute inset-0 flex items-center justify-center z-50" style={{ background: "rgba(0,0,0,0.75)" }}>
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             <span style={{ fontFamily: "sans-serif", fontSize: 13, color: "rgba(255,255,255,0.8)" }}>Loading tour...</span>
@@ -441,8 +453,8 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
       {/* Top-right controls */}
       <div className="absolute top-3 right-3 z-30 flex flex-col gap-1.5">
         <button
-          onClick={() => setIsFullscreen(!isFullscreen)}
-          className="flex items-center justify-center rounded-full shadow-lg transition-colors hover:bg-white/90"
+          onClick={() => setIsFullscreen(f => !f)}
+          className="flex items-center justify-center rounded-full shadow-lg hover:bg-white/90 transition-colors"
           style={{ width: 36, height: 36, background: "rgba(32,33,36,0.92)" }}
         >
           {isFullscreen ? <Minimize2 size={15} color="white" /> : <Maximize2 size={15} color="white" />}
@@ -450,7 +462,7 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
         {onClose && (
           <button
             onClick={onClose}
-            className="flex items-center justify-center rounded-full shadow-lg transition-colors hover:bg-white/90"
+            className="flex items-center justify-center rounded-full shadow-lg hover:bg-white/90 transition-colors"
             style={{ width: 36, height: 36, background: "rgba(32,33,36,0.92)" }}
           >
             <X size={15} color="white" />
@@ -458,7 +470,7 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
         )}
       </div>
 
-      {/* Navigation hint */}
+      {/* Navigation hint toast */}
       {navHint && (
         <div
           className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 rounded-full px-4 py-1.5 shadow-lg pointer-events-none"
@@ -468,7 +480,7 @@ export default function VirtualTour({ initialId = 5, onClose }: VirtualTourProps
         </div>
       )}
 
-      {/* Bottom hint */}
+      {/* Bottom hint bar */}
       {!isLoading && (
         <div
           className="absolute bottom-0 left-0 right-0 z-30 flex items-center justify-center py-1.5 pointer-events-none"
