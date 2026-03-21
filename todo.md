@@ -43,3 +43,5 @@
 - [x] Add animated 3D drone to scan viewport that flies in sync with waypoint progress
 - [x] Drone parks in corner after scan completes, hovering/scanning
 - [x] Add "Drone POV" toggle button to switch camera to drone's first-person view
+- [x] Make drone bright white color for stage visibility from far away
+- [x] Improve Drone POV: allow scroll/orbit to look around inside the point cloud

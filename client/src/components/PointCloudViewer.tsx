@@ -3,13 +3,13 @@
  * Design: Mission Control / Aerospace Command Center
  * Features:
  *  - Simulated room point cloud with orbit controls
- *  - Animated 3D drone that flies along waypoints during scan (synced with progress)
+ *  - Animated 3D drone (BRIGHT WHITE for stage visibility) that flies along waypoints during scan
  *  - Drone parks in corner after scan completes, hovering/scanning
- *  - "DRONE POV" toggle to switch camera to drone's first-person view
+ *  - "DRONE POV" toggle with full mouse orbit controls to look around inside the point cloud
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
-import { Video, Eye, RotateCcw } from "lucide-react";
+import { Video, Eye, RotateCcw, Move } from "lucide-react";
 
 interface PointCloudViewerProps {
   className?: string;
@@ -22,36 +22,21 @@ const ROOM_W = 6, ROOM_H = 3, ROOM_D = 5;
 
 // ── Drone flight waypoints (a scanning pattern through the room) ──────────────
 const DRONE_WAYPOINTS: THREE.Vector3[] = [
-  // Start at entrance
   new THREE.Vector3(0, 2.2, 2.2),
-  // Fly to front-left
   new THREE.Vector3(-2, 2.0, 1.5),
-  // Sweep left wall
   new THREE.Vector3(-2.5, 1.8, 0),
-  // Continue to back-left
   new THREE.Vector3(-2, 2.0, -1.5),
-  // Back wall center
   new THREE.Vector3(0, 2.2, -2),
-  // Back-right
   new THREE.Vector3(2, 2.0, -1.5),
-  // Right wall
   new THREE.Vector3(2.5, 1.8, 0),
-  // Front-right
   new THREE.Vector3(2, 2.0, 1.5),
-  // Center high pass
   new THREE.Vector3(0, 2.5, 0),
-  // Low pass over table
   new THREE.Vector3(1, 1.2, 0.8),
-  // Low pass over sofa
   new THREE.Vector3(-0.5, 1.2, 1.8),
-  // Sweep back to center
   new THREE.Vector3(0, 2.0, 0),
-  // Final high orbit
   new THREE.Vector3(-1.5, 2.4, -1),
   new THREE.Vector3(1.5, 2.4, 1),
-  // Return to center
   new THREE.Vector3(0, 2.2, 0),
-  // Park position (top-right corner of room)
   new THREE.Vector3(2.5, 2.6, -2.2),
 ];
 
@@ -60,15 +45,12 @@ const PARK_POS = new THREE.Vector3(2.5, 2.6, -2.2);
 
 function generateRoomPointCloud(density: number = 15000): Float32Array {
   const points: number[] = [];
-  // Floor
   for (let i = 0; i < density * 0.2; i++) {
     points.push((Math.random() - 0.5) * ROOM_W, 0, (Math.random() - 0.5) * ROOM_D);
   }
-  // Ceiling
   for (let i = 0; i < density * 0.15; i++) {
     points.push((Math.random() - 0.5) * ROOM_W, ROOM_H, (Math.random() - 0.5) * ROOM_D);
   }
-  // Walls
   for (let i = 0; i < density * 0.1; i++) {
     points.push(-ROOM_W / 2, Math.random() * ROOM_H, (Math.random() - 0.5) * ROOM_D);
   }
@@ -81,15 +63,12 @@ function generateRoomPointCloud(density: number = 15000): Float32Array {
   for (let i = 0; i < density * 0.1; i++) {
     points.push((Math.random() - 0.5) * ROOM_W, Math.random() * ROOM_H, ROOM_D / 2);
   }
-  // Sofa
   for (let i = 0; i < density * 0.08; i++) {
     points.push(-1.5 + Math.random() * 2, Math.random() * 0.8, 1.5 + Math.random() * 0.8);
   }
-  // Table
   for (let i = 0; i < density * 0.05; i++) {
     points.push(0.5 + Math.random() * 1.2, 0.7 + Math.random() * 0.05, 0.5 + Math.random() * 0.8);
   }
-  // Table legs
   for (let leg = 0; leg < 4; leg++) {
     const lx = leg < 2 ? 0.55 : 1.65;
     const lz = leg % 2 === 0 ? 0.55 : 1.25;
@@ -97,11 +76,9 @@ function generateRoomPointCloud(density: number = 15000): Float32Array {
       points.push(lx + (Math.random() - 0.5) * 0.05, Math.random() * 0.7, lz + (Math.random() - 0.5) * 0.05);
     }
   }
-  // Bookshelf
   for (let i = 0; i < density * 0.06; i++) {
     points.push(2.2 + Math.random() * 0.4, Math.random() * 2, -2 + Math.random() * 1);
   }
-  // Noise
   for (let i = 0; i < density * 0.02; i++) {
     points.push(
       (Math.random() - 0.5) * ROOM_W * 1.1,
@@ -124,72 +101,137 @@ function generateColors(positions: Float32Array): Float32Array {
   return colors;
 }
 
-// ── Build a simple drone mesh (body + 4 arms + 4 rotors) ─────────────────────
+// ── Build a BRIGHT WHITE drone mesh for stage visibility ─────────────────────
 function createDroneMesh(): THREE.Group {
   const drone = new THREE.Group();
 
-  // Body — dark metallic capsule
-  const bodyGeo = new THREE.BoxGeometry(0.22, 0.08, 0.14);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, metalness: 0.8, roughness: 0.3 });
+  // Body — BRIGHT WHITE with glow
+  const bodyGeo = new THREE.BoxGeometry(0.28, 0.10, 0.18);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.4,
+    metalness: 0.1,
+    roughness: 0.3,
+  });
   const body = new THREE.Mesh(bodyGeo, bodyMat);
   drone.add(body);
 
-  // Camera lens on front
-  const lensGeo = new THREE.SphereGeometry(0.025, 8, 8);
-  const lensMat = new THREE.MeshStandardMaterial({ color: 0x00d4ff, emissive: 0x00d4ff, emissiveIntensity: 0.6 });
+  // Camera lens on front — bright cyan
+  const lensGeo = new THREE.SphereGeometry(0.035, 8, 8);
+  const lensMat = new THREE.MeshStandardMaterial({
+    color: 0x00d4ff,
+    emissive: 0x00d4ff,
+    emissiveIntensity: 1.0,
+  });
   const lens = new THREE.Mesh(lensGeo, lensMat);
-  lens.position.set(0.12, -0.01, 0);
+  lens.position.set(0.15, -0.01, 0);
   drone.add(lens);
 
-  // Arms + rotors
+  // Arms + rotors — WHITE arms, bright white spinning rotors
   const armPositions = [
-    { x: 0.18, z: 0.12 },
-    { x: 0.18, z: -0.12 },
-    { x: -0.18, z: 0.12 },
-    { x: -0.18, z: -0.12 },
+    { x: 0.22, z: 0.15 },
+    { x: 0.22, z: -0.15 },
+    { x: -0.22, z: 0.15 },
+    { x: -0.22, z: -0.15 },
   ];
 
-  const armMat = new THREE.MeshStandardMaterial({ color: 0x333344, metalness: 0.6, roughness: 0.4 });
+  const armMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.3,
+    metalness: 0.2,
+    roughness: 0.4,
+  });
   const rotorMat = new THREE.MeshStandardMaterial({
-    color: 0x00d4ff, transparent: true, opacity: 0.4,
-    emissive: 0x00d4ff, emissiveIntensity: 0.3,
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.6,
+    transparent: true,
+    opacity: 0.7,
   });
 
   armPositions.forEach(({ x, z }) => {
-    // Arm
-    const armGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.2, 6);
+    // Arm — thicker for visibility
+    const armGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.25, 6);
     const arm = new THREE.Mesh(armGeo, armMat);
     arm.rotation.z = Math.PI / 2;
     arm.position.set(x * 0.5, 0.02, z);
     drone.add(arm);
 
-    // Rotor disc
-    const rotorGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.005, 16);
+    // Rotor disc — larger for visibility
+    const rotorGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.006, 16);
     const rotor = new THREE.Mesh(rotorGeo, rotorMat);
-    rotor.position.set(x, 0.06, z);
+    rotor.position.set(x, 0.07, z);
     rotor.userData.isRotor = true;
     drone.add(rotor);
+
+    // Rotor glow ring
+    const ringGeo = new THREE.RingGeometry(0.09, 0.11, 24);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00d4ff,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.set(x, 0.075, z);
+    ring.rotation.x = -Math.PI / 2;
+    ring.userData.isRotor = true;
+    drone.add(ring);
   });
 
-  // LED lights underneath
-  const ledGeo = new THREE.SphereGeometry(0.012, 6, 6);
-  const ledFront = new THREE.Mesh(ledGeo, new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 1 }));
-  ledFront.position.set(0.1, -0.05, 0);
+  // LED lights — brighter and bigger
+  const ledGeo = new THREE.SphereGeometry(0.02, 8, 8);
+  const ledFront = new THREE.Mesh(
+    ledGeo,
+    new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 2 })
+  );
+  ledFront.position.set(0.12, -0.06, 0);
   drone.add(ledFront);
 
-  const ledBack = new THREE.Mesh(ledGeo, new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 1 }));
-  ledBack.position.set(-0.1, -0.05, 0);
+  const ledBack = new THREE.Mesh(
+    ledGeo,
+    new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 2 })
+  );
+  ledBack.position.set(-0.12, -0.06, 0);
   drone.add(ledBack);
 
-  // Scan beam (visible cone of light pointing down)
-  const beamGeo = new THREE.ConeGeometry(0.3, 0.8, 16, 1, true);
+  // Side LEDs — white for extra visibility
+  const ledSide1 = new THREE.Mesh(
+    ledGeo,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2 })
+  );
+  ledSide1.position.set(0, -0.06, 0.08);
+  drone.add(ledSide1);
+
+  const ledSide2 = new THREE.Mesh(
+    ledGeo,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2 })
+  );
+  ledSide2.position.set(0, -0.06, -0.08);
+  drone.add(ledSide2);
+
+  // Scan beam (visible cone of light pointing down) — brighter
+  const beamGeo = new THREE.ConeGeometry(0.35, 1.0, 16, 1, true);
   const beamMat = new THREE.MeshBasicMaterial({
-    color: 0x00d4ff, transparent: true, opacity: 0.08, side: THREE.DoubleSide,
+    color: 0x00d4ff,
+    transparent: true,
+    opacity: 0.1,
+    side: THREE.DoubleSide,
   });
   const beam = new THREE.Mesh(beamGeo, beamMat);
-  beam.position.set(0, -0.45, 0);
+  beam.position.set(0, -0.55, 0);
   beam.userData.isBeam = true;
   drone.add(beam);
+
+  // Point light on drone so it illuminates nearby points
+  const droneLight = new THREE.PointLight(0xffffff, 2, 3);
+  droneLight.position.set(0, 0, 0);
+  drone.add(droneLight);
+
+  // Scale up the entire drone for better visibility
+  drone.scale.setScalar(1.5);
 
   return drone;
 }
@@ -200,9 +242,7 @@ function getDronePosition(progress: number): THREE.Vector3 {
   const t = (progress / 100) * (totalWaypoints - 1);
   const idx = Math.floor(t);
   const frac = t - idx;
-
   if (idx >= totalWaypoints - 1) return DRONE_WAYPOINTS[totalWaypoints - 1].clone();
-
   const a = DRONE_WAYPOINTS[idx];
   const b = DRONE_WAYPOINTS[idx + 1];
   return new THREE.Vector3().lerpVectors(a, b, frac);
@@ -229,6 +269,9 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
   const scanProgressRef = useRef(scanProgress);
   const isScanningRef = useRef(isScanning);
   const dronePovRef = useRef(false);
+  // POV camera orbit angles (yaw/pitch) — user can drag to look around
+  const povOrbitRef = useRef({ yaw: 0, pitch: 0 });
+  const povZoomRef = useRef(90); // FOV for POV mode
   const [loaded, setLoaded] = useState(false);
   const [dronePov, setDronePov] = useState(false);
   const [scanDone, setScanDone] = useState(false);
@@ -243,7 +286,14 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
   }, [isScanning, scanProgress]);
 
   const toggleDronePov = useCallback(() => {
-    setDronePov((prev) => !prev);
+    setDronePov((prev) => {
+      if (!prev) {
+        // Reset POV orbit when entering POV mode
+        povOrbitRef.current = { yaw: 0, pitch: 0 };
+        povZoomRef.current = 90;
+      }
+      return !prev;
+    });
   }, []);
 
   useEffect(() => {
@@ -267,12 +317,15 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Lighting for the drone
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    // Lighting for the drone — brighter
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
     dirLight.position.set(3, 5, 3);
     scene.add(dirLight);
+    const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+    dirLight2.position.set(-3, 3, -3);
+    scene.add(dirLight2);
 
     // Generate point cloud
     const positions = generateRoomPointCloud(20000);
@@ -303,7 +356,7 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
 
     setLoaded(true);
 
-    // Mouse controls
+    // Mouse controls — handle both orbit view and POV mode
     const onMouseDown = (e: MouseEvent) => {
       mouseRef.current.isDown = true;
       mouseRef.current.prevX = e.clientX;
@@ -314,16 +367,69 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
       if (!mouseRef.current.isDown) return;
       const dx = e.clientX - mouseRef.current.prevX;
       const dy = e.clientY - mouseRef.current.prevY;
-      rotationRef.current.y += dx * 0.005;
-      rotationRef.current.x += dy * 0.005;
-      rotationRef.current.x = Math.max(-1, Math.min(1, rotationRef.current.x));
+
+      if (dronePovRef.current) {
+        // POV mode: drag to look around
+        povOrbitRef.current.yaw += dx * 0.005;
+        povOrbitRef.current.pitch -= dy * 0.005;
+        // Clamp pitch to prevent flipping
+        povOrbitRef.current.pitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, povOrbitRef.current.pitch));
+      } else {
+        // Normal orbit mode
+        rotationRef.current.y += dx * 0.005;
+        rotationRef.current.x += dy * 0.005;
+        rotationRef.current.x = Math.max(-1, Math.min(1, rotationRef.current.x));
+      }
+
       mouseRef.current.prevX = e.clientX;
       mouseRef.current.prevY = e.clientY;
+    };
+
+    // Scroll to zoom in POV mode
+    const onWheel = (e: WheelEvent) => {
+      if (dronePovRef.current) {
+        e.preventDefault();
+        povZoomRef.current += e.deltaY * 0.05;
+        povZoomRef.current = Math.max(30, Math.min(120, povZoomRef.current));
+      }
     };
 
     container.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousemove", onMouseMove);
+    container.addEventListener("wheel", onWheel, { passive: false });
+
+    // Touch controls for mobile
+    let lastTouchX = 0, lastTouchY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        mouseRef.current.isDown = true;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1 && mouseRef.current.isDown) {
+        const dx = e.touches[0].clientX - lastTouchX;
+        const dy = e.touches[0].clientY - lastTouchY;
+        if (dronePovRef.current) {
+          povOrbitRef.current.yaw += dx * 0.005;
+          povOrbitRef.current.pitch -= dy * 0.005;
+          povOrbitRef.current.pitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, povOrbitRef.current.pitch));
+        } else {
+          rotationRef.current.y += dx * 0.005;
+          rotationRef.current.x += dy * 0.005;
+          rotationRef.current.x = Math.max(-1, Math.min(1, rotationRef.current.x));
+        }
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+      }
+    };
+    const onTouchEnd = () => { mouseRef.current.isDown = false; };
+
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: true });
+    container.addEventListener("touchend", onTouchEnd);
 
     // Animation loop
     let time = 0;
@@ -342,14 +448,12 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         let lookTarget: THREE.Vector3;
 
         if (scanning) {
-          // Flying along waypoints
           targetPos = getDronePosition(progress);
           lookTarget = getDroneLookTarget(progress);
         } else {
-          // Parked — hover in corner with gentle bob
           targetPos = PARK_POS.clone();
           targetPos.y += Math.sin(time * 2) * 0.05;
-          lookTarget = new THREE.Vector3(0, 1.5, 0); // Look at room center
+          lookTarget = new THREE.Vector3(0, 1.5, 0);
         }
 
         // Smooth interpolation
@@ -365,34 +469,42 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         // Tilt drone slightly in direction of movement
         if (scanning) {
           droneGroup.rotation.z = Math.sin(time * 3) * 0.08;
-          droneGroup.rotation.x = -0.1; // Forward tilt
+          droneGroup.rotation.x = -0.1;
         } else {
           droneGroup.rotation.z = Math.sin(time * 1.5) * 0.03;
           droneGroup.rotation.x = 0;
         }
 
-        // Spin rotors
+        // Spin rotors + pulse beam
         droneGroup.children.forEach((child) => {
           if (child.userData.isRotor) {
             child.rotation.y += scanning ? 0.8 : 0.3;
           }
-          // Pulse scan beam
           if (child.userData.isBeam) {
             const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-            mat.opacity = scanning ? 0.08 + Math.sin(time * 4) * 0.04 : 0.03;
+            mat.opacity = scanning ? 0.1 + Math.sin(time * 4) * 0.05 : 0.04;
           }
         });
       }
 
       // ── Camera ──────────────────────────────────────────────────────────
       if (isPov && droneGroup) {
-        // Drone POV: camera at drone position, looking where drone looks
+        // Drone POV: camera at drone position, user can orbit/look around
         const dronePos = droneGroup.position.clone();
+        camera.position.copy(dronePos).add(new THREE.Vector3(0, -0.02, 0));
+
+        // Calculate look direction based on user's yaw/pitch orbit
+        const yaw = povOrbitRef.current.yaw;
+        const pitch = povOrbitRef.current.pitch;
+
+        // Start with drone's forward direction, then apply user orbit
         const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(droneGroup.quaternion);
-        // Slightly below and behind the drone
-        camera.position.copy(dronePos).add(new THREE.Vector3(0, -0.05, 0));
-        camera.lookAt(dronePos.clone().add(fwd.multiplyScalar(3)).add(new THREE.Vector3(0, -0.5, 0)));
-        camera.fov = 90;
+        // Create a rotation from yaw/pitch
+        const euler = new THREE.Euler(pitch, yaw, 0, "YXZ");
+        const lookDir = fwd.clone().applyEuler(euler).normalize();
+
+        camera.lookAt(dronePos.clone().add(lookDir.multiplyScalar(5)));
+        camera.fov = povZoomRef.current;
         camera.updateProjectionMatrix();
       } else {
         // Normal orbit camera
@@ -439,6 +551,10 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
       container.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousemove", onMouseMove);
+      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("resize", onResize);
       renderer.dispose();
       geometry.dispose();
@@ -462,26 +578,41 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         <div className="absolute top-12 right-3 z-20 flex flex-col gap-2">
           <button
             onClick={toggleDronePov}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-mono text-[10px] tracking-wider transition-all backdrop-blur-sm ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-md font-mono text-[11px] tracking-wider transition-all backdrop-blur-sm ${
               dronePov
                 ? "bg-cyan/20 text-cyan border border-cyan/40 shadow-[0_0_12px_rgba(0,212,255,0.3)]"
                 : "bg-black/50 text-muted-foreground border border-white/10 hover:text-foreground hover:border-white/20"
             }`}
             title={dronePov ? "Switch to orbit view" : "Switch to drone camera"}
           >
-            {dronePov ? <Eye size={12} /> : <Video size={12} />}
+            {dronePov ? <Eye size={14} /> : <Video size={14} />}
             {dronePov ? "ORBIT VIEW" : "DRONE POV"}
           </button>
 
           {dronePov && (
-            <button
-              onClick={() => setDronePov(false)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-black/50 text-muted-foreground border border-white/10 hover:text-foreground hover:border-white/20 font-mono text-[10px] tracking-wider transition-all backdrop-blur-sm"
-            >
-              <RotateCcw size={12} />
-              RESET CAM
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  povOrbitRef.current = { yaw: 0, pitch: 0 };
+                  povZoomRef.current = 90;
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-black/50 text-muted-foreground border border-white/10 hover:text-foreground hover:border-white/20 font-mono text-[11px] tracking-wider transition-all backdrop-blur-sm"
+              >
+                <RotateCcw size={14} />
+                RESET VIEW
+              </button>
+            </>
           )}
+        </div>
+      )}
+
+      {/* POV mode hint */}
+      {loaded && dronePov && (
+        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 border border-cyan/30 backdrop-blur-sm">
+            <Move size={12} className="text-cyan" />
+            <span className="font-mono text-[10px] text-cyan/80 tracking-wider">DRAG TO LOOK AROUND • SCROLL TO ZOOM</span>
+          </div>
         </div>
       )}
 
