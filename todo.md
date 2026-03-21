@@ -13,4 +13,9 @@
 - [x] Integrate Tripo3D 3D model viewer into dashboard (GLB viewer with HDR lighting)
 - [x] Connect chat terminal commands to Tripo3D generation
 - [x] Write vitest tests for Tripo3D API routes
-- [ ] Push updated code to GitHub (pending)
+- [x] Push updated code to GitHub
+- [x] Upload 7 cafe panoramic photos to CDN
+- [x] Add image-to-3D Tripo3D API route (POST /api/tripo/image-to-3d)
+- [x] Build 360° panorama viewer component (Three.js equirectangular)
+- [x] Wire "scan the cafe" command to trigger scan simulation + panorama viewer + 3D generation
+- [x] Add social media export/share button for generated models

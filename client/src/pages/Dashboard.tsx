@@ -3,6 +3,7 @@
  * Design: Split-panel command center
  * Left: Chat terminal | Center: 3D viewport | Right: Telemetry
  * Now with Tripo3D integration for real 3D model generation
+ * and 360° panorama viewer for cafe scan demo
  */
 import { useState, useCallback, useRef, useEffect } from "react";
 import * as THREE from "three";
@@ -14,7 +15,8 @@ import ChatTerminal from "@/components/ChatTerminal";
 import TelemetryPanel from "@/components/TelemetryPanel";
 import PointCloudViewer from "@/components/PointCloudViewer";
 import ModelViewer from "@/components/ModelViewer";
-import { Maximize2, Minimize2, Box, Scan } from "lucide-react";
+import PanoramaViewer, { CAFE_PANORAMAS } from "@/components/PanoramaViewer";
+import { Maximize2, Minimize2, Box, Scan, Camera, Share2, Download, Copy, Check } from "lucide-react";
 
 interface Message {
   id: string;
@@ -28,8 +30,17 @@ const now = () => new Date().toLocaleTimeString("en-US", { hour12: false });
 const initialMessages: Message[] = [
   { id: "1", role: "system", text: "OpenClaw Gateway connected. Telegram bridge active.", timestamp: "09:00:00" },
   { id: "2", role: "system", text: "DJI Mavic Air 1 detected. Battery: 87%. Signal: Strong.", timestamp: "09:00:01" },
-  { id: "3", role: "openclaw", text: "Ready for commands. Try:\n• 'Scan the living room for Airbnb'\n• 'Generate 3D model of a modern kitchen'\n• 'Start security patrol'\n• 'help' for all commands", timestamp: "09:00:02" },
+  { id: "3", role: "openclaw", text: "Ready for commands. Try:\n• 'Scan the cafe for my social media'\n• 'Generate 3D model of a modern kitchen'\n• 'Scan the living room for Airbnb'\n• 'help' for all commands", timestamp: "09:00:02" },
 ];
+
+// Detect if a command is a cafe/social media scan request
+function isCafeScanCommand(lower: string): boolean {
+  const cafeTriggers = ["cafe", "coffee shop", "restaurant", "social media", "instagram", "post", "share"];
+  const scanTriggers = ["scan", "map", "capture", "shoot", "record", "photograph"];
+  const hasCafeTrigger = cafeTriggers.some((t) => lower.includes(t));
+  const hasScanTrigger = scanTriggers.some((t) => lower.includes(t));
+  return hasCafeTrigger || (hasScanTrigger && hasCafeTrigger);
+}
 
 export default function Dashboard() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -44,35 +55,32 @@ export default function Dashboard() {
   });
   const [modelUrl, setModelUrl] = useState<string | null>(() => localStorage.getItem('tripo_model_url'));
   const [renderedImage, setRenderedImage] = useState<string | null>(() => localStorage.getItem('tripo_rendered_image'));
-  const [viewMode, setViewMode] = useState<"pointcloud" | "model">(() => {
+  const [viewMode, setViewMode] = useState<"pointcloud" | "model" | "panorama">(() => {
     const saved = localStorage.getItem('tripo_view_mode');
-    return (saved === 'model' ? 'model' : 'pointcloud') as 'pointcloud' | 'model';
+    if (saved === 'model') return 'model';
+    if (saved === 'panorama') return 'panorama';
+    return 'pointcloud';
   });
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Sync state to localStorage for persistence across refreshes
+  // Social media share state
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Sync state to localStorage
   useEffect(() => {
-    if (activeTaskId) {
-      localStorage.setItem('tripo_active_task_id', activeTaskId);
-    } else {
-      localStorage.removeItem('tripo_active_task_id');
-    }
+    if (activeTaskId) localStorage.setItem('tripo_active_task_id', activeTaskId);
+    else localStorage.removeItem('tripo_active_task_id');
   }, [activeTaskId]);
 
   useEffect(() => {
-    if (modelUrl) {
-      localStorage.setItem('tripo_model_url', modelUrl);
-    } else {
-      localStorage.removeItem('tripo_model_url');
-    }
+    if (modelUrl) localStorage.setItem('tripo_model_url', modelUrl);
+    else localStorage.removeItem('tripo_model_url');
   }, [modelUrl]);
 
   useEffect(() => {
-    if (renderedImage) {
-      localStorage.setItem('tripo_rendered_image', renderedImage);
-    } else {
-      localStorage.removeItem('tripo_rendered_image');
-    }
+    if (renderedImage) localStorage.setItem('tripo_rendered_image', renderedImage);
+    else localStorage.removeItem('tripo_rendered_image');
   }, [renderedImage]);
 
   useEffect(() => {
@@ -101,25 +109,14 @@ export default function Dashboard() {
   // Watch for task completion
   useEffect(() => {
     if (!taskStatusQuery.data || !activeTaskId) return;
-
-    const { status, progress, modelUrl: url, renderedImage: img } = taskStatusQuery.data;
-
-    if (status === "running" || status === "queued") {
-      // Update progress messages periodically
-      const progressPct = Math.round(progress * 100);
-      if (progressPct > 0 && progressPct % 25 === 0) {
-        // Only add message at 25%, 50%, 75% milestones
-      }
-    }
+    const { status, modelUrl: url, renderedImage: img } = taskStatusQuery.data;
 
     if (status === "success") {
-      // Prefer pbr model, fallback to regular model
       const tripoUrl = taskStatusQuery.data?.pbrModelUrl ?? url;
       const taskId = activeTaskId;
       if (tripoUrl && taskId) {
         addMessage("openclaw", "Model generated! Uploading to secure storage...");
-        setActiveTaskId(null); // stop polling
-        // Proxy through our S3 to avoid CORS issues
+        setActiveTaskId(null);
         proxyModelMutation.mutate(
           { tripoUrl, taskId },
           {
@@ -128,10 +125,10 @@ export default function Dashboard() {
               setRenderedImage(img ?? null);
               setViewMode("model");
               setIsGenerating(false);
-              addMessage("openclaw", `3D model ready!\nLoaded in the viewport — rotate, zoom, and explore.\nRendered with PBR materials and textures.`);
+              setShareUrl(data.url);
+              addMessage("openclaw", `3D model ready!\nLoaded in the viewport — rotate, zoom, and explore.\nRendered with PBR materials and textures.\n\nShare link ready — click the SHARE button above the viewport.`);
             },
             onError: () => {
-              // Fallback: try loading the Tripo URL directly anyway
               setModelUrl(tripoUrl);
               setRenderedImage(img ?? null);
               setViewMode("model");
@@ -148,7 +145,7 @@ export default function Dashboard() {
       setActiveTaskId(null);
       addMessage("openclaw", "3D model generation failed. Please try again with a different prompt or image.");
     }
-  }, [taskStatusQuery.data, activeTaskId]);
+  }, [taskStatusQuery.data, activeTaskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [telemetry, setTelemetry] = useState<{
     battery: number;
@@ -186,7 +183,6 @@ export default function Dashboard() {
   const generateFromText = useCallback(async (prompt: string) => {
     setIsGenerating(true);
     addMessage("openclaw", `Sending to Tripo3D: "${prompt}"\nThis typically takes 30-90 seconds...`);
-
     try {
       const result = await textToModelMutation.mutateAsync({ prompt });
       setActiveTaskId(result.taskId);
@@ -202,7 +198,6 @@ export default function Dashboard() {
   const generateFromImage = useCallback(async (imageUrl: string) => {
     setIsGenerating(true);
     addMessage("openclaw", `Processing image for 3D reconstruction...\nThis typically takes 30-90 seconds...`);
-
     try {
       const result = await imageToModelMutation.mutateAsync({ imageUrl });
       setActiveTaskId(result.taskId);
@@ -214,6 +209,79 @@ export default function Dashboard() {
     }
   }, [addMessage, imageToModelMutation]);
 
+  // Cafe scan simulation — shows panoramas then generates 3D from best image
+  const simulateCafeScan = useCallback(() => {
+    setIsScanning(true);
+    setScanProgress(0);
+    setTelemetry((t) => ({ ...t, droneStatus: "scanning", altitude: 1.8, speed: 0.6 }));
+
+    addMessage("openclaw", "Acknowledged. Initiating cafe scan sequence...\nDrone will fly a 360° sweep capturing panoramic views.");
+    setTimeout(() => addMessage("system", "Drone armed. Motors spinning up."), 600);
+    setTimeout(() => addMessage("system", "Takeoff complete. Altitude: 1.8m. Entering cafe airspace."), 1800);
+    setTimeout(() => addMessage("openclaw", `Executing panoramic sweep. Capturing ${CAFE_PANORAMAS.length} panoramic shots at key positions.`), 2800);
+
+    let progress = 0;
+    let waypoint = 0;
+    let seconds = 0;
+
+    scanIntervalRef.current = setInterval(() => {
+      progress += 3;
+      seconds += 1;
+      if (progress % 14 === 0) {
+        waypoint = Math.min(waypoint + 1, CAFE_PANORAMAS.length);
+        const pano = CAFE_PANORAMAS[waypoint - 1];
+        if (pano) {
+          addMessage("system", `Waypoint ${waypoint}/${CAFE_PANORAMAS.length}: ${pano.label} — captured.`);
+        }
+      }
+
+      const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
+      const secs = (seconds % 60).toString().padStart(2, "0");
+
+      setScanProgress(Math.min(progress, 100));
+      setTelemetry((t) => ({
+        ...t,
+        scanProgress: Math.min(progress, 100),
+        currentWaypoint: waypoint,
+        imagesCaptures: waypoint * 3 + Math.floor(Math.random() * 2),
+        battery: Math.round(Math.max(t.battery - 0.4, 20)),
+        altitude: 1.8 + Math.sin(progress * 0.04) * 0.4,
+        speed: 0.4 + Math.random() * 0.4,
+        flightTime: `${mins}:${secs}`,
+        totalWaypoints: CAFE_PANORAMAS.length,
+      }));
+
+      if (progress >= 100) {
+        clearInterval(scanIntervalRef.current!);
+        setIsScanning(false);
+        setTelemetry((t) => ({
+          ...t,
+          droneStatus: "processing",
+          speed: 0,
+          altitude: 0,
+          scanProgress: 100,
+          currentWaypoint: CAFE_PANORAMAS.length,
+          imagesCaptures: CAFE_PANORAMAS.length * 3 + 4,
+        }));
+
+        addMessage("system", `Scan complete. ${CAFE_PANORAMAS.length * 3 + 4} images captured across ${CAFE_PANORAMAS.length} waypoints.`);
+        addMessage("openclaw", "Panoramic scan complete! Loading 360° viewer...");
+
+        setTimeout(() => {
+          setViewMode("panorama");
+          addMessage("openclaw", `All ${CAFE_PANORAMAS.length} panoramic views loaded.\n\n📸 You can:\n• Drag to look around in 360°\n• Click thumbnails to switch views\n• Press GEN 3D to create a 3D model from any view\n• Download individual frames for social media\n\nGenerating 3D model from best capture...`);
+          setTelemetry((t) => ({ ...t, droneStatus: "online" }));
+
+          // Auto-trigger 3D generation from the main hall panorama (best for 3D)
+          setTimeout(() => {
+            const bestPano = CAFE_PANORAMAS[4]; // Main Hall — Full View
+            generateFromImage(bestPano.url);
+          }, 1500);
+        }, 1500);
+      }
+    }, 300);
+  }, [addMessage, generateFromImage]);
+
   const simulateScan = useCallback(() => {
     setIsScanning(true);
     setScanProgress(0);
@@ -221,10 +289,9 @@ export default function Dashboard() {
     setTelemetry((t) => ({ ...t, droneStatus: "scanning", altitude: 1.5, speed: 0.8 }));
 
     addMessage("openclaw", "Acknowledged. Initiating scan sequence...");
-
     setTimeout(() => addMessage("system", "Drone armed. Motors spinning up."), 800);
     setTimeout(() => addMessage("system", "Takeoff complete. Altitude: 1.5m"), 2000);
-    setTimeout(() => addMessage("openclaw", "Executing waypoint mission. 16 waypoints loaded. Capturing images at each waypoint."), 3000);
+    setTimeout(() => addMessage("openclaw", "Executing waypoint mission. 16 waypoints loaded."), 3000);
 
     let progress = 0;
     let waypoint = 0;
@@ -268,7 +335,6 @@ export default function Dashboard() {
         }));
         addMessage("system", `Scan complete. ${images + 5} images captured across 16 waypoints.`);
         addMessage("openclaw", "Processing images with COLMAP photogrammetry engine...");
-
         setTimeout(() => {
           addMessage("openclaw", "3D point cloud generated successfully. 23,847 points reconstructed.");
           addMessage("openclaw", "Model available in the 3D viewport. You can rotate and zoom to explore.");
@@ -278,12 +344,27 @@ export default function Dashboard() {
     }, 300);
   }, [addMessage]);
 
+  const handleCopyShare = useCallback(() => {
+    const url = shareUrl ?? modelUrl ?? CAFE_PANORAMAS[0].url;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [shareUrl, modelUrl]);
+
   const handleCommand = useCallback((command: string) => {
     addMessage("user", command);
     const lower = command.toLowerCase();
 
+    // Cafe / social media scan — highest priority
+    if (isCafeScanCommand(lower) || lower.includes("scan the cafe") || lower.includes("scan cafe")) {
+      setTimeout(() => {
+        addMessage("openclaw", `Understood! Scanning the cafe for social media content.\nDrone will capture 360° panoramic views of all key areas.`);
+        setTimeout(() => simulateCafeScan(), 800);
+      }, 400);
+    }
     // Generate 3D model from text
-    if (lower.includes("generate") || lower.includes("create 3d") || lower.includes("model of")) {
+    else if (lower.includes("generate") || lower.includes("create 3d") || lower.includes("model of")) {
       setTimeout(() => {
         addMessage("openclaw", `Understood. Parsing command: "${command}". Routing to Tripo3D for AI-powered 3D generation.`);
         setTimeout(() => generateFromText(command), 500);
@@ -299,12 +380,17 @@ export default function Dashboard() {
         }, 500);
       }
     }
-    // Scan commands (drone simulation)
+    // Generic scan commands (non-cafe)
     else if (lower.includes("scan") || lower.includes("map") || lower.includes("airbnb")) {
       setTimeout(() => {
         addMessage("openclaw", `Understood. Parsing command: "${command}". Preparing scan mission for interior mapping.`);
         setTimeout(() => simulateScan(), 1000);
       }, 500);
+    }
+    // Show panorama
+    else if (lower.includes("panorama") || lower.includes("360") || lower.includes("show cafe")) {
+      setViewMode("panorama");
+      addMessage("openclaw", "Switching to 360° panorama view. Drag to look around.");
     }
     // Switch view mode
     else if (lower.includes("show model") || lower.includes("view model")) {
@@ -312,7 +398,7 @@ export default function Dashboard() {
         setViewMode("model");
         addMessage("openclaw", "Switching to 3D model view.");
       } else {
-        addMessage("openclaw", "No 3D model available yet. Generate one first with 'generate 3D model of [description]'.");
+        addMessage("openclaw", "No 3D model available yet. Try 'scan the cafe for social media' to generate one.");
       }
     }
     else if (lower.includes("show pointcloud") || lower.includes("view pointcloud") || lower.includes("show scan")) {
@@ -331,7 +417,7 @@ export default function Dashboard() {
     // Help
     else if (lower.includes("help")) {
       setTimeout(() => {
-        addMessage("openclaw", "Available commands:\n• 'Scan [room] for [purpose]' - Simulate drone scan\n• 'Generate 3D model of [description]' - Create 3D model via Tripo3D AI\n• 'Create 3D [object]' - Text-to-3D generation\n• Paste an image URL - Image-to-3D conversion\n• 'Show model' / 'Show pointcloud' - Switch viewport\n• 'Status' - Check drone & task status\n• 'Stop' - Abort current mission");
+        addMessage("openclaw", "Available commands:\n• 'Scan the cafe for my social media' — 360° panoramic scan + 3D model\n• 'Scan [room] for Airbnb' — Interior mapping scan\n• 'Generate 3D model of [description]' — Text-to-3D via Tripo3D\n• Paste an image URL — Image-to-3D conversion\n• 'Show panorama' — View 360° cafe scan\n• 'Show model' / 'Show pointcloud' — Switch viewport\n• 'Status' — Check drone & task status\n• 'Stop' — Abort current mission");
       }, 500);
     }
     // Stop
@@ -348,10 +434,22 @@ export default function Dashboard() {
     // Default
     else {
       setTimeout(() => {
-        addMessage("openclaw", `I understand you said "${command}". I can help with:\n• Drone scanning & mapping\n• 3D model generation (text or image)\n• Security patrol\nType 'help' for all commands.`);
+        addMessage("openclaw", `I understand you said "${command}". I can help with:\n• 'Scan the cafe for social media' — full 360° scan\n• 'Generate 3D model of [description]'\n• 'Scan [room] for Airbnb'\nType 'help' for all commands.`);
       }, 500);
     }
-  }, [addMessage, simulateScan, generateFromText, generateFromImage, telemetry, activeTaskId, taskStatusQuery.data, modelUrl]);
+  }, [addMessage, simulateCafeScan, simulateScan, generateFromText, generateFromImage, telemetry, activeTaskId, taskStatusQuery.data, modelUrl]);
+
+  const viewportLabel = viewMode === "model"
+    ? "3D Viewport | Tripo3D Model"
+    : viewMode === "panorama"
+    ? "360° Panorama | Cafe Scan"
+    : "3D Viewport | Point Cloud";
+
+  const viewportFooter = viewMode === "model" && modelUrl
+    ? "Tripo3D GLB Model | Drag to rotate, scroll to zoom"
+    : viewMode === "panorama"
+    ? "360° Panoramic Scan | Drag to look around • Click thumbnails to switch views"
+    : `Points: ${isScanning ? Math.floor(scanProgress * 238.47) : "23,847"} | Drag to rotate`;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -377,6 +475,15 @@ export default function Dashboard() {
                 SCAN
               </button>
               <button
+                onClick={() => setViewMode("panorama")}
+                className={`px-2 py-1 rounded font-mono text-[10px] tracking-wider transition-colors ${
+                  viewMode === "panorama" ? "bg-cyan/20 text-cyan" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Camera size={12} className="inline mr-1" />
+                360°
+              </button>
+              <button
                 onClick={() => setViewMode("model")}
                 className={`px-2 py-1 rounded font-mono text-[10px] tracking-wider transition-colors ${
                   viewMode === "model" ? "bg-cyan/20 text-cyan" : "text-muted-foreground hover:text-foreground"
@@ -387,11 +494,23 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* Share button — visible when we have a model or panorama */}
+            {(modelUrl || viewMode === "panorama") && (
+              <button
+                onClick={handleCopyShare}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan/10 border border-cyan/30 text-cyan font-mono text-[10px] tracking-wider hover:bg-cyan/20 transition-colors"
+                title="Copy share link"
+              >
+                {copied ? <Check size={12} /> : <Share2 size={12} />}
+                {copied ? "COPIED!" : "SHARE"}
+              </button>
+            )}
+
             <span className={`px-2.5 py-1 rounded-md font-mono text-[10px] tracking-wider uppercase ${
               isScanning ? "bg-cyan/10 text-cyan border border-cyan/30" :
               isGenerating ? "bg-purple-500/10 text-purple-400 border border-purple-500/30" :
               telemetry.droneStatus === "processing" ? "bg-amber-500/10 text-amber-400 border border-amber-500/30" :
-              "bg-emerald-ok/10 text-emerald-ok border border-emerald-ok/30"
+              "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
             }`}>
               {isScanning ? "SCANNING" : isGenerating ? "GENERATING 3D" : telemetry.droneStatus === "processing" ? "PROCESSING" : "STANDBY"}
             </span>
@@ -416,13 +535,13 @@ export default function Dashboard() {
           {/* Center: 3D Viewport */}
           <div className="relative glow-border-active rounded-lg overflow-hidden bg-black/40 min-h-[400px]">
             {/* Viewport header */}
-            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/60 to-transparent">
+            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
               <span className="font-mono text-[10px] text-cyan tracking-widest uppercase">
-                {viewMode === "model" ? "3D Viewport | Tripo3D Model" : "3D Viewport | Point Cloud"}
+                {viewportLabel}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pointer-events-auto">
                 {isScanning && (
-                  <span className="font-mono text-[10px] text-amber-alert animate-pulse-glow">
+                  <span className="font-mono text-[10px] text-amber-400 animate-pulse">
                     SCANNING {scanProgress}%
                   </span>
                 )}
@@ -440,8 +559,16 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* 3D Viewer - switches between point cloud and model */}
-            {viewMode === "model" && modelUrl ? (
+            {/* Viewport content */}
+            {viewMode === "panorama" ? (
+              <PanoramaViewer
+                onGenerateModel={(imageUrl) => {
+                  addMessage("user", `Generate 3D model from this panoramic view`);
+                  addMessage("openclaw", "Sending panoramic image to Tripo3D for 3D reconstruction...");
+                  generateFromImage(imageUrl);
+                }}
+              />
+            ) : viewMode === "model" && modelUrl ? (
               <ModelViewer
                 modelUrl={modelUrl}
                 posterUrl={renderedImage ?? undefined}
@@ -455,17 +582,15 @@ export default function Dashboard() {
               />
             )}
 
-            {/* Viewport footer */}
-            <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2 bg-gradient-to-t from-black/60 to-transparent">
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {viewMode === "model" && modelUrl
-                  ? "Tripo3D GLB Model | Drag to rotate, scroll to zoom"
-                  : `Points: ${isScanning ? Math.floor(scanProgress * 238.47) : "23,847"} | Drag to rotate`}
-              </span>
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {viewMode === "model" ? "model-viewer" : `Three.js r${THREE.REVISION || "183"}`}
-              </span>
-            </div>
+            {/* Viewport footer — only show for non-panorama modes (panorama has its own UI) */}
+            {viewMode !== "panorama" && (
+              <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2 bg-gradient-to-t from-black/60 to-transparent pointer-events-none">
+                <span className="font-mono text-[10px] text-muted-foreground">{viewportFooter}</span>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {viewMode === "model" ? "model-viewer" : `Three.js r${THREE.REVISION || "183"}`}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Right: Telemetry */}
