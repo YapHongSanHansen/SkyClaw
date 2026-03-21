@@ -21,6 +21,7 @@ import Navbar from "@/components/Navbar";
 import ChatTerminal from "@/components/ChatTerminal";
 import TelemetryPanel from "@/components/TelemetryPanel";
 import PointCloudViewer from "@/components/PointCloudViewer";
+import CafeModelViewer from "@/components/CafeModelViewer";
 import VirtualTour, { FRAMES } from "@/components/VirtualTour";
 import { Maximize2, Minimize2, Scan, Map, Share2, Check } from "lucide-react";
 
@@ -248,7 +249,7 @@ export default function Dashboard() {
   }, [addMessage, simulateCafeScan, simulateScan, telemetry]);
 
   const viewportLabel =
-    viewMode === "tour" ? "Immersive Virtual Tour | Cafe" : "3D Viewport | Point Cloud";
+    viewMode === "tour" ? "3D Model | Cafe" : "3D Viewport | Point Cloud";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -328,7 +329,7 @@ export default function Dashboard() {
 
             {/* Viewport content */}
             {viewMode === "tour" ? (
-              <VirtualTour initialIndex={0} />
+              <CafeModelViewer />
             ) : (
               <PointCloudViewer className="w-full h-full" isScanning={isScanning} scanProgress={scanProgress} />
             )}

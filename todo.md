@@ -35,3 +35,6 @@
 - [x] Restore sphere + narrow FOV (75°) to fix distortion while keeping 3D immersion
 - [x] Extract frames from IMG_4958.MOV using ffmpeg, upload to CDN
 - [x] Rewrite VirtualTour with video frames as sequential viewpoints (static view + drag to look + click to advance)
+- [x] Upload 21_03_2026.glb to CDN
+- [x] Build GLB model viewer with Three.js OrbitControls (drag orbit, scroll zoom, double-click walk)
+- [x] Replace video frame tour in Dashboard with GLB viewer
