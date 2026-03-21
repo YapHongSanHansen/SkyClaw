@@ -4,6 +4,8 @@
  * Left: Chat terminal | Center: 3D viewport | Right: Telemetry
  */
 import { useState, useCallback, useRef } from "react";
+
+let messageCounter = 100;
 import Navbar from "@/components/Navbar";
 import ChatTerminal from "@/components/ChatTerminal";
 import TelemetryPanel from "@/components/TelemetryPanel";
@@ -59,7 +61,9 @@ export default function Dashboard() {
   });
 
   const addMessage = useCallback((role: Message["role"], text: string) => {
-    setMessages((prev) => [...prev, { id: Date.now().toString(), role, text, timestamp: now() }]);
+    messageCounter += 1;
+    const id = `msg-${messageCounter}-${Math.random().toString(36).slice(2, 8)}`;
+    setMessages((prev) => [...prev, { id, role, text, timestamp: now() }]);
   }, []);
 
   const simulateScan = useCallback(() => {
