@@ -33,3 +33,5 @@
 - [x] Redesign VirtualTour to match Google Street View: bright panorama, top-left info card, bottom-left mini-map, no dark overlays
 - [x] Fix VirtualTour distortion: use flat-plane projection instead of sphere for regular wide-angle photos
 - [x] Restore sphere + narrow FOV (75°) to fix distortion while keeping 3D immersion
+- [x] Extract frames from IMG_4958.MOV using ffmpeg, upload to CDN
+- [x] Rewrite VirtualTour with video frames as sequential viewpoints (static view + drag to look + click to advance)
