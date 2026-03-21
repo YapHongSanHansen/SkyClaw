@@ -215,86 +215,17 @@ export default function CafeWalkthrough() {
     accentLight.position.set(2, 2, -3);
     scene.add(accentLight);
 
-    // === Cafe layout enclosure from USDA scan data ===
-    // Walls parsed from second_floor.usdz — each is a unit cube scaled/transformed
-    // The USDA coordinate system is rotated ~33.7° relative to our scene, so we apply
-    // the full 4x4 matrix from the scan data and scale to match the photogrammetry model.
-    const CAFE_WALLS: Array<{ w: number; h: number; m: number[][] }> = [
-      { w: 3.948, h: 2.216, m: [[-0.830,0,-0.558,0],[0,1,0,0],[0.558,0,-0.830,0],[-2.424,-0.095,2.654,1]] },
-      { w: 3.948, h: 2.216, m: [[-0.830,0,-0.558,0],[0,1,0,0],[0.558,0,-0.830,0],[-0.115,-0.095,4.116,1]] },
-      { w: 1.772, h: 2.216, m: [[-0.558,0,0.830,0],[0,1,0,0],[-0.830,0,-0.558,0],[1.646,-0.095,4.365,1]] },
-      { w: 1.700, h: 2.216, m: [[-0.558,0,0.830,0],[0,1,0,0],[-0.830,0,-0.558,0],[4.076,-0.095,3.906,1]] },
-      { w: 1.600, h: 2.216, m: [[-0.830,0,-0.558,0],[0,1,0,0],[0.558,0,-0.830,0],[0.488,-0.095,4.654,1]] },
-      { w: 0.182, h: 2.216, m: [[0.558,0,-0.830,0],[0,1,0,0],[0.830,0,0.558,0],[-4.013,-0.095,1.478,1]] },
-      { w: 0.758, h: 2.216, m: [[-0.830,0,-0.558,0],[0,1,0,0],[0.558,0,-0.830,0],[-0.368,-0.095,3.814,1]] },
-      { w: 0.456, h: 2.216, m: [[-0.815,0,-0.579,0],[0,1,0,0],[0.579,0,-0.815,0],[-4.148,-0.095,1.271,1]] },
-      { w: 0.184, h: 2.216, m: [[-0.558,0,0.830,0],[0,1,0,0],[-0.830,0,-0.558,0],[-0.734,-0.095,3.679,1]] },
-      { w: 4.323, h: 2.216, m: [[0.830,0,0.558,0],[0,1,0,0],[-0.558,0,0.830,0],[0.370,-0.095,-1.806,1]] },
-      { w: 4.323, h: 2.216, m: [[0.830,0,0.558,0],[0,1,0,0],[-0.558,0,0.830,0],[-2.107,-0.095,-0.143,1]] },
-      { w: 1.210, h: 1.980, m: [[0.558,0,-0.830,0],[0,1,0,0],[0.830,0,0.558,0],[-1.762,-0.213,-2.508,1]] },
-      { w: 4.099, h: 2.216, m: [[0.830,0,0.558,0],[0,1,0,0],[-0.558,0,0.830,0],[2.848,-0.095,2.058,1]] },
-      { w: 1.826, h: 2.216, m: [[-0.558,0,0.830,0],[0,1,0,0],[-0.830,0,-0.558,0],[1.656,-0.095,0.157,1]] },
-      { w: 4.339, h: 2.216, m: [[0.830,0,0.558,0],[0,1,0,0],[-0.558,0,0.830,0],[-0.654,-0.095,-0.295,1]] },
-      { w: 4.323, h: 1.980, m: [[0.830,0,0.558,0],[0,1,0,0],[-0.558,0,0.830,0],[-0.305,-0.213,-0.801,1]] },
-      { w: 3.857, h: 2.216, m: [[0.579,0,-0.815,0],[0,1,0,0],[0.815,0,0.579,0],[-3.216,-0.095,-0.434,1]] },
-    ];
-
-    // Scale factor to match the photogrammetry GLB model (12 / maxDim of the GLB)
-    // The USDA uses meters; the GLB is scaled to fit ~12 units. We'll scale the layout
-    // to roughly match. Adjust LAYOUT_SCALE if walls don't align perfectly.
-    const LAYOUT_SCALE = 1.35;
-    const LAYOUT_OFFSET = new THREE.Vector3(0, 0, 0);
-
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0xd4c8b8,
-      roughness: 0.85,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.35,
+    // Large environment sphere — warm cafe interior color so you never see black void
+    const envSphereGeo = new THREE.SphereGeometry(40, 32, 32);
+    const envSphereMat = new THREE.MeshBasicMaterial({
+      color: 0x2a1f15,
+      side: THREE.BackSide,
     });
-
-    const cafeLayoutGroup = new THREE.Group();
-
-    CAFE_WALLS.forEach((wall) => {
-      const geo = new THREE.BoxGeometry(wall.w, wall.h, 0.08);
-      const mesh = new THREE.Mesh(geo, wallMat);
-
-      // Apply the 4x4 transform matrix from the USDA data
-      const m = wall.m;
-      const mat4 = new THREE.Matrix4();
-      // USD is row-major, Three.js is column-major — transpose
-      mat4.set(
-        m[0][0], m[1][0], m[2][0], m[3][0],
-        m[0][1], m[1][1], m[2][1], m[3][1],
-        m[0][2], m[1][2], m[2][2], m[3][2],
-        m[0][3], m[1][3], m[2][3], m[3][3]
-      );
-      mesh.applyMatrix4(mat4);
-      mesh.receiveShadow = true;
-      cafeLayoutGroup.add(mesh);
-    });
-
-    // Ceiling — a flat plane at the top of the walls
-    const ceilingGeo = new THREE.PlaneGeometry(20, 20);
-    const ceilingMat = new THREE.MeshStandardMaterial({
-      color: 0xe8ddd0,
-      roughness: 0.9,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.25,
-    });
-    const ceiling = new THREE.Mesh(ceilingGeo, ceilingMat);
-    ceiling.rotation.x = Math.PI / 2;
-    ceiling.position.y = 2.1;
-    cafeLayoutGroup.add(ceiling);
-
-    // Scale and position the layout to match the photogrammetry model
-    cafeLayoutGroup.scale.setScalar(LAYOUT_SCALE);
-    cafeLayoutGroup.position.copy(LAYOUT_OFFSET);
-    scene.add(cafeLayoutGroup);
+    const envSphere = new THREE.Mesh(envSphereGeo, envSphereMat);
+    scene.add(envSphere);
 
     // Ground plane extending beyond the model to cover any gaps
-    const groundGeo = new THREE.PlaneGeometry(40, 40);
+    const groundGeo = new THREE.PlaneGeometry(60, 60);
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x3d2b1a,
       roughness: 0.9,
@@ -304,15 +235,6 @@ export default function CafeWalkthrough() {
     ground.position.y = -0.01;
     ground.receiveShadow = true;
     scene.add(ground);
-
-    // Fallback environment sphere — still present but with warm color to fill any remaining gaps
-    const envSphereGeo = new THREE.SphereGeometry(30, 16, 16);
-    const envSphereMat = new THREE.MeshBasicMaterial({
-      color: 0x2a1f15,
-      side: THREE.BackSide,
-    });
-    const envSphere = new THREE.Mesh(envSphereGeo, envSphereMat);
-    scene.add(envSphere);
 
     // Character
     const character = buildCharacter();
