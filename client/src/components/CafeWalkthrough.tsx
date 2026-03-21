@@ -153,7 +153,7 @@ export default function CafeWalkthrough() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 2.5;
 
     const resize = () => {
       const w = canvas.clientWidth;
@@ -165,18 +165,22 @@ export default function CafeWalkthrough() {
 
     // Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0f);
-    scene.fog = new THREE.Fog(0x0a0a0f, 15, 35);
+    scene.background = new THREE.Color(0x1a1a24);
+    scene.fog = new THREE.Fog(0x1a1a24, 25, 60);
 
     // Camera
     const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 100);
     camera.position.set(0, 2.2, 7.5);
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    // Lighting — BRIGHT for stage presentation on large screens
+    const ambient = new THREE.AmbientLight(0xffffff, 2.0);
     scene.add(ambient);
 
-    const sunLight = new THREE.DirectionalLight(0xfff8e7, 1.5);
+    // Hemisphere light for natural fill (sky + ground bounce)
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xfff0dd, 1.5);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff8e7, 3.0);
     sunLight.position.set(5, 10, 5);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(2048, 2048);
@@ -188,13 +192,26 @@ export default function CafeWalkthrough() {
     sunLight.shadow.camera.bottom = -15;
     scene.add(sunLight);
 
-    // Warm fill light
-    const fillLight = new THREE.PointLight(0xff9944, 0.8, 20);
+    // Second directional from opposite side for even lighting
+    const sunLight2 = new THREE.DirectionalLight(0xfff0dd, 2.0);
+    sunLight2.position.set(-5, 8, -5);
+    scene.add(sunLight2);
+
+    // Warm fill lights spread around the room
+    const fillLight = new THREE.PointLight(0xff9944, 2.0, 25);
     fillLight.position.set(-3, 3, 0);
     scene.add(fillLight);
 
+    const fillLight2 = new THREE.PointLight(0xffcc88, 1.5, 25);
+    fillLight2.position.set(3, 3, -3);
+    scene.add(fillLight2);
+
+    const fillLight3 = new THREE.PointLight(0xffffff, 1.5, 25);
+    fillLight3.position.set(0, 4, 2);
+    scene.add(fillLight3);
+
     // Cyan accent light (matches the character)
-    const accentLight = new THREE.PointLight(0x00e5ff, 0.4, 10);
+    const accentLight = new THREE.PointLight(0x00e5ff, 0.8, 15);
     accentLight.position.set(2, 2, -3);
     scene.add(accentLight);
 

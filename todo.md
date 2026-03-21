@@ -45,3 +45,4 @@
 - [x] Add "Drone POV" toggle button to switch camera to drone's first-person view
 - [x] Make drone bright white color for stage visibility from far away
 - [x] Improve Drone POV: allow scroll/orbit to look around inside the point cloud
+- [x] Make 3D cafe walkthrough much brighter for stage presentation (increase ambient, directional, environment lighting)
