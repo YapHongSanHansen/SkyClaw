@@ -487,30 +487,30 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         });
       }
 
+      // ── Hide drone in POV mode so it doesn't block the CCTV view ─────
+      if (droneGroup) {
+        droneGroup.visible = !isPov;
+      }
+
       // ── Camera ──────────────────────────────────────────────────────────
       if (isPov && droneGroup) {
-        // FPV-style POV: camera mounted just behind/below the drone
-        // so the drone arms/wings are visible at screen edges but center is clear
-        // Get drone's forward direction
-        const droneForward = new THREE.Vector3(0, 0, -1).applyQuaternion(droneGroup.quaternion);
-        const droneUp = new THREE.Vector3(0, 1, 0).applyQuaternion(droneGroup.quaternion);
+        // CCTV-style POV: elevated corner position looking down at the room
+        // Camera sits at a high corner like a security camera
+        const cctvPos = new THREE.Vector3(ROOM_W / 2 - 0.3, ROOM_H - 0.2, -ROOM_D / 2 + 0.3);
+        camera.position.copy(cctvPos);
 
-        // Position camera slightly behind and below the drone body
-        const camOffset = droneForward.clone().multiplyScalar(-0.15) // slightly behind
-          .add(droneUp.clone().multiplyScalar(-0.12)); // slightly below
-        const fpvPos = droneGroup.position.clone().add(camOffset);
-        camera.position.copy(fpvPos);
-
-        // User can orbit the look direction with drag
+        // User can orbit the look target with drag
         const yaw = povOrbitRef.current.yaw;
         const pitch = povOrbitRef.current.pitch;
 
-        // Base look direction: where the drone is facing
-        const baseLookTarget = droneGroup.position.clone().add(droneForward.clone().multiplyScalar(5));
-        // Apply user's yaw/pitch offset
-        const right = new THREE.Vector3().crossVectors(droneForward, droneUp).normalize();
-        const offset = right.clone().multiplyScalar(Math.sin(yaw) * 4)
-          .add(droneUp.clone().multiplyScalar(Math.sin(pitch) * 3));
+        // Base look direction: towards room center and slightly down
+        const baseLookTarget = new THREE.Vector3(0, 0.5, 0);
+        // Apply user's yaw/pitch offset to the look target
+        const offset = new THREE.Vector3(
+          Math.sin(yaw) * 4,
+          Math.sin(pitch) * 3,
+          Math.cos(yaw) * 4
+        );
         const lookTarget = baseLookTarget.clone().add(offset);
 
         camera.lookAt(lookTarget);
