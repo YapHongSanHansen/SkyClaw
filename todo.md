@@ -47,3 +47,4 @@
 - [x] Improve Drone POV: allow scroll/orbit to look around inside the point cloud
 - [x] Make 3D cafe walkthrough much brighter for stage presentation (increase ambient, directional, environment lighting)
 - [x] Prevent camera from seeing outside the cafe model (no black void/sphere edges) without stretching the interior view
+- [x] Replace environment sphere with actual cafe layout model (second_floor.usdz → GLB) as room enclosure
