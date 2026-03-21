@@ -31,3 +31,4 @@
 - [x] Free-roam VirtualTour: click anywhere = new POV, crossfade between panoramas, no fixed hotspots
 - [x] Remove dark sidebar list, replace with Google Maps-style dots on mini-map
 - [x] Redesign VirtualTour to match Google Street View: bright panorama, top-left info card, bottom-left mini-map, no dark overlays
+- [x] Fix VirtualTour distortion: use flat-plane projection instead of sphere for regular wide-angle photos
