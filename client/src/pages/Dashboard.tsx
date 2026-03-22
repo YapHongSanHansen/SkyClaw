@@ -73,10 +73,12 @@ export default function Dashboard() {
     currentWaypoint: number; flightTime: string;
     droneStatus: "online" | "offline" | "scanning" | "warning" | "processing";
     scanProgress: number;
+    pitch: number; yaw: number; camPitch: number; roll: number;
   }>({
     battery: 87, altitude: 0, speed: 0, signal: 95, temperature: 24,
     imagesCaptures: 0, totalWaypoints: 16, currentWaypoint: 0,
     flightTime: "00:00", droneStatus: "online", scanProgress: 0,
+    pitch: 0, yaw: 0, camPitch: 0, roll: 0,
   });
 
   const addMessage = useCallback((role: Message["role"], text: string) => {
@@ -95,6 +97,7 @@ export default function Dashboard() {
     addMessage("openclaw", `Acknowledged. Initiating cafe scan sequence...\nDrone will fly a 360° sweep capturing 62 positions from your walkthrough video.`);
     setTimeout(() => addMessage("system", "Drone armed. Motors spinning up."), 600);
     setTimeout(() => addMessage("system", "Takeoff complete. Altitude: 1.8m. Entering cafe airspace."), 1800);
+    setTimeout(() => addMessage("system", "IMU calibrated. Axis telemetry online."), 2200);
     setTimeout(() => addMessage("openclaw", `Executing panoramic sweep. Capturing 62 frames.`), 2800);
 
     let progress = 0;
@@ -104,9 +107,15 @@ export default function Dashboard() {
     scanIntervalRef.current = setInterval(() => {
       progress += 3;
       seconds += 1;
+      // Simulate realistic axis values during flight
+      const simYaw = ((progress * 5.8) % 360) - 180; // -180 to 180, sweeping
+      const simPitch = -8 + Math.sin(progress * 0.08) * 5; // slight nose-down oscillation
+      const simCamPitch = -45 + Math.sin(progress * 0.05) * 15; // camera tilting down
+      const simRoll = Math.sin(progress * 0.12) * 3; // gentle banking
+
       if (progress % 14 === 0) {
         waypoint = Math.min(waypoint + 1, 62);
-        addMessage("system", `Frame ${waypoint}/62 captured.`);
+        addMessage("system", `WP${waypoint}/62 | Pitch: ${simPitch.toFixed(1)}° | Yaw: ${simYaw.toFixed(1)}° | Cam: ${simCamPitch.toFixed(1)}° | Roll: ${simRoll.toFixed(1)}°`);
       }
 
       const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -121,6 +130,7 @@ export default function Dashboard() {
         speed: 0.4 + Math.random() * 0.4,
         flightTime: `${mins}:${secs}`,
         totalWaypoints: 62,
+        pitch: simPitch, yaw: simYaw, camPitch: simCamPitch, roll: simRoll,
       }));
 
       if (progress >= 100) {
@@ -161,12 +171,20 @@ export default function Dashboard() {
     addMessage("openclaw", "Acknowledged. Initiating scan sequence...");
     setTimeout(() => addMessage("system", "Drone armed. Motors spinning up."), 800);
     setTimeout(() => addMessage("system", "Takeoff complete. Altitude: 1.5m"), 2000);
+    setTimeout(() => addMessage("system", "IMU calibrated. Axis telemetry online."), 2500);
     setTimeout(() => addMessage("openclaw", "Executing waypoint mission. 16 waypoints loaded."), 3000);
 
     let progress = 0, waypoint = 0, images = 0, seconds = 0;
     scanIntervalRef.current = setInterval(() => {
       progress += 2; seconds += 1;
-      if (progress % 12 === 0) { waypoint = Math.min(waypoint + 1, 16); images += Math.floor(Math.random() * 4) + 3; }
+      const gYaw = ((progress * 7.2) % 360) - 180;
+      const gPitch = -5 + Math.sin(progress * 0.1) * 4;
+      const gCamPitch = -30 + Math.sin(progress * 0.06) * 10;
+      const gRoll = Math.sin(progress * 0.15) * 2.5;
+      if (progress % 12 === 0) {
+        waypoint = Math.min(waypoint + 1, 16); images += Math.floor(Math.random() * 4) + 3;
+        addMessage("system", `WP${waypoint}/16 | Pitch: ${gPitch.toFixed(1)}° | Yaw: ${gYaw.toFixed(1)}° | Cam: ${gCamPitch.toFixed(1)}° | Roll: ${gRoll.toFixed(1)}°`);
+      }
       const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
       const secs = (seconds % 60).toString().padStart(2, "0");
       setScanProgress(Math.min(progress, 100));
@@ -175,6 +193,7 @@ export default function Dashboard() {
         imagesCaptures: images, battery: Math.round(Math.max(t.battery - 0.3, 20)),
         altitude: 1.5 + Math.sin(progress * 0.05) * 0.3, speed: 0.5 + Math.random() * 0.5,
         flightTime: `${mins}:${secs}`,
+        pitch: gPitch, yaw: gYaw, camPitch: gCamPitch, roll: gRoll,
       }));
       if (progress >= 100) {
         clearInterval(scanIntervalRef.current!);

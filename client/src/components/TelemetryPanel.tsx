@@ -18,6 +18,10 @@ interface TelemetryData {
   flightTime: string;
   droneStatus: "online" | "offline" | "scanning" | "warning" | "processing";
   scanProgress: number;
+  pitch: number;
+  yaw: number;
+  camPitch: number;
+  roll: number;
 }
 
 interface TelemetryPanelProps {
@@ -116,6 +120,29 @@ export default function TelemetryPanel({ data, className = "" }: TelemetryPanelP
       <div className="flex items-center justify-between border-t border-border pt-3">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Ground Speed</span>
         <span className="font-mono text-sm font-bold text-foreground">{data.speed.toFixed(1)} <span className="text-xs text-muted-foreground">m/s</span></span>
+      </div>
+
+      {/* Axis Telemetry */}
+      <div className="space-y-2 border-t border-border pt-3">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-cyan">Axis Telemetry</span>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-navy-mid/50 rounded-md p-2">
+            <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground block mb-0.5">Pitch</span>
+            <span className={`font-mono text-sm font-bold ${data.droneStatus === 'scanning' ? 'text-cyan' : 'text-muted-foreground'}`}>{data.pitch.toFixed(1)}<span className="text-[10px] text-muted-foreground">°</span></span>
+          </div>
+          <div className="bg-navy-mid/50 rounded-md p-2">
+            <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground block mb-0.5">Yaw</span>
+            <span className={`font-mono text-sm font-bold ${data.droneStatus === 'scanning' ? 'text-cyan' : 'text-muted-foreground'}`}>{data.yaw.toFixed(1)}<span className="text-[10px] text-muted-foreground">°</span></span>
+          </div>
+          <div className="bg-navy-mid/50 rounded-md p-2">
+            <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground block mb-0.5">Cam Pitch</span>
+            <span className={`font-mono text-sm font-bold ${data.droneStatus === 'scanning' ? 'text-amber-alert' : 'text-muted-foreground'}`}>{data.camPitch.toFixed(1)}<span className="text-[10px] text-muted-foreground">°</span></span>
+          </div>
+          <div className="bg-navy-mid/50 rounded-md p-2">
+            <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground block mb-0.5">Roll</span>
+            <span className={`font-mono text-sm font-bold ${data.droneStatus === 'scanning' ? 'text-emerald-ok' : 'text-muted-foreground'}`}>{data.roll.toFixed(1)}<span className="text-[10px] text-muted-foreground">°</span></span>
+          </div>
+        </div>
       </div>
     </div>
   );
