@@ -34,7 +34,7 @@ interface Message {
 const now = () => new Date().toLocaleTimeString("en-US", { hour12: false });
 
 const initialMessages: Message[] = [
-  { id: "1", role: "system", text: "OpenClaw Gateway connected. Telegram bridge active.", timestamp: "09:00:00" },
+  { id: "1", role: "system", text: "OpenClaw Gateway connected. Telegram bot @SkyClaw3DBot online.", timestamp: "09:00:00" },
   { id: "2", role: "system", text: "DJI Mavic Air 1 detected. Battery: 87%. Signal: Strong.", timestamp: "09:00:01" },
   { id: "3", role: "openclaw", text: "Ready for commands. Try:\n• 'Scan the cafe for my social media'\n• 'Scan the living room for Airbnb'\n• 'Tour' — open immersive virtual tour\n• 'help' for all commands", timestamp: "09:00:02" },
 ];

@@ -1,13 +1,21 @@
 /**
  * Navbar - Top navigation bar
  * Design: Mission Control status bar with live indicators
+ * Now shows real Telegram bot connection status via tRPC
  */
 import { Link, useLocation } from "wouter";
-import { Radar, LayoutDashboard, Info, Github } from "lucide-react";
+import { Radar, LayoutDashboard, Info, Github, Send } from "lucide-react";
 import StatusIndicator from "./StatusIndicator";
+import { trpc } from "@/lib/trpc";
 
 export default function Navbar() {
   const [location] = useLocation();
+
+  // Real-time Telegram bot status check
+  const { data: telegramStatus } = trpc.telegram.status.useQuery(undefined, {
+    refetchInterval: 30000, // Re-check every 30 seconds
+    staleTime: 20000,
+  });
 
   const links = [
     { href: "/", label: "Home", icon: Radar },
@@ -47,11 +55,37 @@ export default function Navbar() {
           ))}
         </div>
 
-        {/* Status */}
-        <div className="flex items-center gap-4">
+        {/* Status indicators */}
+        <div className="flex items-center gap-3">
           <StatusIndicator status="online" label="GATEWAY" />
+
+          {/* Telegram Bot Status — real connection check */}
+          {telegramStatus?.connected ? (
+            <a
+              href={`https://t.me/${telegramStatus.username}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#0088cc]/10 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-colors group"
+              title={`Telegram bot @${telegramStatus.username} is online`}
+            >
+              <Send size={12} className="text-[#0088cc]" />
+              <span className="font-mono text-[10px] tracking-wider text-[#0088cc] hidden sm:inline">
+                @{telegramStatus.username}
+              </span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </a>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 border border-border">
+              <Send size={12} className="text-muted-foreground" />
+              <span className="font-mono text-[10px] tracking-wider text-muted-foreground hidden sm:inline">
+                BOT OFFLINE
+              </span>
+              <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50" />
+            </div>
+          )}
+
           <a
-            href="https://github.com"
+            href="https://github.com/YapHongSanHansen/SkyClaw"
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted-foreground hover:text-foreground transition-colors"

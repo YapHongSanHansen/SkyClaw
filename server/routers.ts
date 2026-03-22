@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { imageToModel, textToModel, getTaskStatus } from "./tripo3d";
 import { storagePut } from "./storage";
+import { getTelegramBotStatus } from "./telegramStatus";
 
 export const appRouter = router({
   system: systemRouter,
@@ -14,6 +15,13 @@ export const appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
+    }),
+  }),
+
+  telegram: router({
+    /** Check if the Telegram bot is connected and get its info */
+    status: publicProcedure.query(async () => {
+      return getTelegramBotStatus();
     }),
   }),
 

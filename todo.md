@@ -51,3 +51,7 @@
 - [x] Show drone axis telemetry (pitch, yaw, cam pitch, roll) in OpenClaw terminal during scan simulation
 - [x] Add furniture point cloud shapes (sofa, coffee table, TV) to the 3D point cloud viewer
 - [x] Sync orbit view camera to follow the drone during scanning (camera tracks drone path)
+- [x] Telegram bot: Create server-side bot that receives scan commands and responds with status + dashboard link
+- [x] Telegram bot: Add /start, /scan, /status, /help commands
+- [x] Telegram bot: Send simulated scan progress updates (waypoints, completion, 3D model link)
+- [x] Dashboard: Show real Telegram bot connection status (online/offline indicator)
