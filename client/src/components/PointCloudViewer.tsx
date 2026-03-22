@@ -43,60 +43,157 @@ const DRONE_WAYPOINTS: THREE.Vector3[] = [
 // ── Park position (where drone hovers after scan) ─────────────────────────────
 const PARK_POS = new THREE.Vector3(2.5, 2.6, -2.2);
 
-function generateRoomPointCloud(density: number = 15000): Float32Array {
-  const points: number[] = [];
-  for (let i = 0; i < density * 0.2; i++) {
-    points.push((Math.random() - 0.5) * ROOM_W, 0, (Math.random() - 0.5) * ROOM_D);
-  }
-  for (let i = 0; i < density * 0.15; i++) {
-    points.push((Math.random() - 0.5) * ROOM_W, ROOM_H, (Math.random() - 0.5) * ROOM_D);
-  }
-  for (let i = 0; i < density * 0.1; i++) {
-    points.push(-ROOM_W / 2, Math.random() * ROOM_H, (Math.random() - 0.5) * ROOM_D);
-  }
-  for (let i = 0; i < density * 0.1; i++) {
-    points.push(ROOM_W / 2, Math.random() * ROOM_H, (Math.random() - 0.5) * ROOM_D);
-  }
-  for (let i = 0; i < density * 0.1; i++) {
-    points.push((Math.random() - 0.5) * ROOM_W, Math.random() * ROOM_H, -ROOM_D / 2);
-  }
-  for (let i = 0; i < density * 0.1; i++) {
-    points.push((Math.random() - 0.5) * ROOM_W, Math.random() * ROOM_H, ROOM_D / 2);
-  }
-  for (let i = 0; i < density * 0.08; i++) {
-    points.push(-1.5 + Math.random() * 2, Math.random() * 0.8, 1.5 + Math.random() * 0.8);
-  }
-  for (let i = 0; i < density * 0.05; i++) {
-    points.push(0.5 + Math.random() * 1.2, 0.7 + Math.random() * 0.05, 0.5 + Math.random() * 0.8);
-  }
-  for (let leg = 0; leg < 4; leg++) {
-    const lx = leg < 2 ? 0.55 : 1.65;
-    const lz = leg % 2 === 0 ? 0.55 : 1.25;
-    for (let i = 0; i < density * 0.005; i++) {
-      points.push(lx + (Math.random() - 0.5) * 0.05, Math.random() * 0.7, lz + (Math.random() - 0.5) * 0.05);
+// Helper: add a box-shaped cluster of points
+function addBox(points: number[], cx: number, cy: number, cz: number, w: number, h: number, d: number, count: number, surfaceOnly = true) {
+  for (let i = 0; i < count; i++) {
+    if (surfaceOnly) {
+      // Generate points on the surface of the box for a more realistic scan look
+      const face = Math.floor(Math.random() * 6);
+      let x: number, y: number, z: number;
+      switch (face) {
+        case 0: x = cx - w/2; y = cy + (Math.random() - 0.5) * h; z = cz + (Math.random() - 0.5) * d; break; // left
+        case 1: x = cx + w/2; y = cy + (Math.random() - 0.5) * h; z = cz + (Math.random() - 0.5) * d; break; // right
+        case 2: x = cx + (Math.random() - 0.5) * w; y = cy + h/2; z = cz + (Math.random() - 0.5) * d; break; // top
+        case 3: x = cx + (Math.random() - 0.5) * w; y = cy - h/2; z = cz + (Math.random() - 0.5) * d; break; // bottom
+        case 4: x = cx + (Math.random() - 0.5) * w; y = cy + (Math.random() - 0.5) * h; z = cz - d/2; break; // front
+        default: x = cx + (Math.random() - 0.5) * w; y = cy + (Math.random() - 0.5) * h; z = cz + d/2; break; // back
+      }
+      points.push(x, y, z);
+    } else {
+      points.push(
+        cx + (Math.random() - 0.5) * w,
+        cy + (Math.random() - 0.5) * h,
+        cz + (Math.random() - 0.5) * d
+      );
     }
   }
-  for (let i = 0; i < density * 0.06; i++) {
-    points.push(2.2 + Math.random() * 0.4, Math.random() * 2, -2 + Math.random() * 1);
+}
+
+function generateRoomPointCloud(density: number = 25000): Float32Array {
+  const points: number[] = [];
+
+  // ── Room shell (floor, ceiling, 4 walls) ─────────────────────────────────
+  // Floor
+  for (let i = 0; i < density * 0.15; i++) {
+    points.push((Math.random() - 0.5) * ROOM_W, 0, (Math.random() - 0.5) * ROOM_D);
   }
+  // Ceiling
+  for (let i = 0; i < density * 0.1; i++) {
+    points.push((Math.random() - 0.5) * ROOM_W, ROOM_H, (Math.random() - 0.5) * ROOM_D);
+  }
+  // Left wall
+  for (let i = 0; i < density * 0.08; i++) {
+    points.push(-ROOM_W / 2, Math.random() * ROOM_H, (Math.random() - 0.5) * ROOM_D);
+  }
+  // Right wall
+  for (let i = 0; i < density * 0.08; i++) {
+    points.push(ROOM_W / 2, Math.random() * ROOM_H, (Math.random() - 0.5) * ROOM_D);
+  }
+  // Back wall (behind sofa, z = +ROOM_D/2)
+  for (let i = 0; i < density * 0.08; i++) {
+    points.push((Math.random() - 0.5) * ROOM_W, Math.random() * ROOM_H, ROOM_D / 2);
+  }
+  // Front wall (behind TV, z = -ROOM_D/2)
+  for (let i = 0; i < density * 0.08; i++) {
+    points.push((Math.random() - 0.5) * ROOM_W, Math.random() * ROOM_H, -ROOM_D / 2);
+  }
+
+  // ── SOFA — against back wall (z ≈ +1.8), centered on x ──────────────────
+  // Sofa seat (wide, low box)
+  const sofaX = 0, sofaZ = 1.8;
+  addBox(points, sofaX, 0.25, sofaZ, 2.2, 0.5, 0.9, Math.floor(density * 0.06));
+  // Sofa backrest (taller, thinner, behind seat)
+  addBox(points, sofaX, 0.6, sofaZ + 0.35, 2.2, 0.7, 0.2, Math.floor(density * 0.04));
+  // Left armrest
+  addBox(points, sofaX - 1.0, 0.4, sofaZ, 0.2, 0.55, 0.9, Math.floor(density * 0.015));
+  // Right armrest
+  addBox(points, sofaX + 1.0, 0.4, sofaZ, 0.2, 0.55, 0.9, Math.floor(density * 0.015));
+  // Sofa cushions (slightly raised bumps on seat)
+  for (let c = -1; c <= 1; c++) {
+    addBox(points, sofaX + c * 0.65, 0.52, sofaZ - 0.05, 0.55, 0.08, 0.7, Math.floor(density * 0.008));
+  }
+
+  // ── COFFEE TABLE — in front of sofa (z ≈ +0.6) ─────────────────────────
+  const tableX = 0, tableZ = 0.6;
+  // Table top (flat rectangular surface)
+  addBox(points, tableX, 0.42, tableZ, 1.2, 0.06, 0.6, Math.floor(density * 0.025));
+  // 4 table legs
+  const legOffsets = [
+    [-0.5, -0.22], [0.5, -0.22], [-0.5, 0.22], [0.5, 0.22]
+  ];
+  for (const [lx, lz] of legOffsets) {
+    addBox(points, tableX + lx, 0.2, tableZ + lz, 0.06, 0.4, 0.06, Math.floor(density * 0.004));
+  }
+  // Items on table (a small book / remote)
+  addBox(points, tableX + 0.2, 0.47, tableZ, 0.2, 0.03, 0.14, Math.floor(density * 0.003));
+
+  // ── TV — on opposite wall facing sofa (z ≈ -2.2), mounted/on stand ─────
+  const tvX = 0, tvZ = -2.0;
+  // TV screen (thin, wide, tall rectangle)
+  addBox(points, tvX, 1.1, tvZ, 1.8, 1.0, 0.08, Math.floor(density * 0.05));
+  // TV stand / base
+  addBox(points, tvX, 0.55, tvZ, 0.8, 0.06, 0.3, Math.floor(density * 0.01));
+  // TV stand leg (center pillar)
+  addBox(points, tvX, 0.35, tvZ, 0.12, 0.4, 0.12, Math.floor(density * 0.005));
+  // TV bezel edges (slightly brighter frame)
+  addBox(points, tvX, 1.6, tvZ, 1.82, 0.04, 0.1, Math.floor(density * 0.005)); // top edge
+  addBox(points, tvX, 0.6, tvZ, 1.82, 0.04, 0.1, Math.floor(density * 0.005)); // bottom edge
+  addBox(points, tvX - 0.9, 1.1, tvZ, 0.04, 1.02, 0.1, Math.floor(density * 0.003)); // left edge
+  addBox(points, tvX + 0.9, 1.1, tvZ, 0.04, 1.02, 0.1, Math.floor(density * 0.003)); // right edge
+
+  // ── Scatter noise (simulates imperfect scan) ────────────────────────────
   for (let i = 0; i < density * 0.02; i++) {
     points.push(
-      (Math.random() - 0.5) * ROOM_W * 1.1,
-      Math.random() * ROOM_H * 1.1,
-      (Math.random() - 0.5) * ROOM_D * 1.1
+      (Math.random() - 0.5) * ROOM_W * 1.05,
+      Math.random() * ROOM_H * 1.05,
+      (Math.random() - 0.5) * ROOM_D * 1.05
     );
   }
+
   return new Float32Array(points);
 }
 
 function generateColors(positions: Float32Array): Float32Array {
   const colors = new Float32Array(positions.length);
   for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
     const y = positions[i + 1];
-    const t = y / 3;
-    colors[i] = 0.0 + t * 0.1;
-    colors[i + 1] = 0.7 + t * 0.15;
-    colors[i + 2] = 0.9 + t * 0.1;
+    const z = positions[i + 2];
+
+    // Detect which object this point belongs to based on position
+    const isSofa = z > 1.2 && z < 2.5 && y < 1.1 && Math.abs(x) < 1.3;
+    const isTable = z > 0.2 && z < 1.0 && y < 0.55 && y > 0.0 && Math.abs(x) < 0.8;
+    const isTV = z < -1.7 && z > -2.3 && Math.abs(x) < 1.1;
+
+    if (isSofa) {
+      // Warm amber/brown for sofa
+      colors[i] = 0.75 + Math.random() * 0.1;
+      colors[i + 1] = 0.55 + Math.random() * 0.1;
+      colors[i + 2] = 0.25 + Math.random() * 0.05;
+    } else if (isTable) {
+      // Warm wood tone for coffee table
+      colors[i] = 0.6 + Math.random() * 0.1;
+      colors[i + 1] = 0.4 + Math.random() * 0.08;
+      colors[i + 2] = 0.2 + Math.random() * 0.05;
+    } else if (isTV) {
+      if (y > 0.65 && y < 1.55 && Math.abs(x) < 0.85) {
+        // TV screen — dark with slight blue glow
+        colors[i] = 0.05 + Math.random() * 0.05;
+        colors[i + 1] = 0.1 + Math.random() * 0.15;
+        colors[i + 2] = 0.3 + Math.random() * 0.2;
+      } else {
+        // TV bezel/stand — dark gray
+        colors[i] = 0.15 + Math.random() * 0.05;
+        colors[i + 1] = 0.15 + Math.random() * 0.05;
+        colors[i + 2] = 0.18 + Math.random() * 0.05;
+      }
+    } else {
+      // Room shell — cyan gradient based on height
+      const t = y / ROOM_H;
+      colors[i] = 0.0 + t * 0.1;
+      colors[i + 1] = 0.7 + t * 0.15;
+      colors[i + 2] = 0.9 + t * 0.1;
+    }
   }
   return colors;
 }

@@ -49,3 +49,4 @@
 - [x] Fix Drone POV to CCTV-style elevated corner view looking down at the room (not stuck between points)
 - [x] Hide drone model when in CCTV POV mode so it doesn't block the view
 - [x] Show drone axis telemetry (pitch, yaw, cam pitch, roll) in OpenClaw terminal during scan simulation
+- [x] Add furniture point cloud shapes (sofa, coffee table, TV) to the 3D point cloud viewer
