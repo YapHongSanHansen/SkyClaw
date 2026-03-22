@@ -613,8 +613,34 @@ export default function PointCloudViewer({ className = "", isScanning = false, s
         camera.lookAt(lookTarget);
         camera.fov = povZoomRef.current;
         camera.updateProjectionMatrix();
+      } else if (scanning && droneGroup) {
+        // Scanning mode: orbit camera follows the drone
+        // Camera orbits around the drone's current position at a fixed offset
+        const dronePos = droneGroup.position;
+        const followRadius = 4;
+        const followHeight = 1.5;
+
+        // Slowly auto-orbit around the drone, user can still drag to adjust
+        if (!mouseRef.current.isDown) {
+          rotationRef.current.y += 0.006;
+        }
+
+        // Camera position: orbit around the drone
+        const camX = dronePos.x + Math.sin(rotationRef.current.y) * followRadius;
+        const camZ = dronePos.z + Math.cos(rotationRef.current.y) * followRadius;
+        const camY = dronePos.y + followHeight + rotationRef.current.x * 2;
+
+        // Smooth camera follow
+        camera.position.x += (camX - camera.position.x) * 0.06;
+        camera.position.y += (camY - camera.position.y) * 0.06;
+        camera.position.z += (camZ - camera.position.z) * 0.06;
+
+        // Look at the drone
+        camera.lookAt(dronePos.x, dronePos.y - 0.3, dronePos.z);
+        camera.fov = 55;
+        camera.updateProjectionMatrix();
       } else {
-        // Normal orbit camera
+        // Normal orbit camera (idle / post-scan)
         if (!mouseRef.current.isDown) {
           rotationRef.current.y += 0.002;
         }
